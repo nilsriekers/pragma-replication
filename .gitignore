@@ -1,0 +1,7 @@
+*.*.swp
+*.pyc
+data/
+*.log
+*.caffemodel
+*.lprof
+*.ipynb_checkpoints
