@@ -179,7 +179,7 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
     for i_epoch in range(config.epochs):
 
         with open("vis.html", "w") as vis_f:
-            print >>vis_f, "<html><body><table>"
+            print("<html><body><table>", file=vis_f)
 
         np.random.shuffle(train_scenes)
 
@@ -220,7 +220,7 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             e_test_acc += accs.sum()
 
         with open("vis.html", "a") as vis_f:
-            print >>vis_f, "</table></body></html>"
+            print("</table></body></html>", file=vis_f)
 
         shutil.copyfile("vis.html", "vis2.html")
 
@@ -229,8 +229,8 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
         e_test_loss /= n_test_batches
         e_test_acc /= n_test_batches
 
-        print "%5.3f  (%5.3f)  :  %5.3f  (%5.3f)" % (
-                e_train_loss, e_train_acc, e_test_loss, e_test_acc)
+        print("%5.3f  (%5.3f)  :  %5.3f  (%5.3f)" % (
+                e_train_loss, e_train_acc, e_test_loss, e_test_acc))
 
 
 def demo(scenes, model, apollo_net, config):
@@ -243,9 +243,9 @@ def demo(scenes, model, apollo_net, config):
     _, samples = model.sample(data, alt_data, dropout=False)
     for i in range(10):
         sample = samples[i]
-        print data[i].image_id
-        print " ".join([WORD_INDEX.get(i) for i in sample])
-        print
+        print(data[i].image_id)
+        print(" ".join([WORD_INDEX.get(i) for i in sample]))
+        print()
 
 def run_experiment(name, cname, rname, models, data):
     data_by_image = defaultdict(list)
@@ -254,14 +254,14 @@ def run_experiment(name, cname, rname, models, data):
 
     with open("experiments/%s/%s.ids.txt" % (name, cname)) as id_f, \
          open("experiments/%s/%s.results.%s.txt" % (name, cname, rname), "w") as results_f:
-        print >>results_f, "id,target,distractor,similarity,model_name,speaker_score,listener_score,description"
+        print("id,target,distractor,similarity,model_name,speaker_score,listener_score,description", file=results_f)
         counter = 0
         for line in id_f:
             img1, img2, similarity = line.strip().split(",")
             assert img1 in data_by_image and img2 in data_by_image
             d1 = data_by_image[img1][0]
             d2 = data_by_image[img2][0]
-            for model_name, model in models.items():
+            for model_name, model in list(models.items()):
                 for i_sample in range(10):
                     speaker_scores, listener_scores, samples = \
                             model.sample([d1], [[d2]], dropout=False, viterbi=False)
@@ -275,7 +275,7 @@ def run_experiment(name, cname, rname, models, data):
                         listener_scores[0],
                         " ".join([WORD_INDEX.get(i) for i in samples[0][1:-1]])
                     ]
-                    print >>results_f, ",".join([str(s) for s in parts])
+                    print(",".join([str(s) for s in parts]), file=results_f)
                     counter += 1
 
 def main():
@@ -294,8 +294,8 @@ def main():
         assert corpus_name == "birds"
         train_scenes, dev_scenes, test_scenes = corpus.load_birds()
     apollo_net = ApolloNet()
-    print "loaded data"
-    print "%d training examples" % len(train_scenes)
+    print("loaded data")
+    print("%d training examples" % len(train_scenes))
 
     listener0_model = Listener0Model(apollo_net, config.model)
     speaker0_model = Speaker0Model(apollo_net, config.model)
@@ -310,7 +310,7 @@ def main():
 
     if job == "train.compiled":
         apollo_net.load("models/%s.base.caffemodel" % corpus_name)
-        print "loaded model"
+        print("loaded model")
         train(train_scenes, dev_scenes, compiled_speaker1_model, apollo_net,
                 config.opt)
         apollo_net.save("models/%s.compiled.caffemodel" % corpus_name)
@@ -321,7 +321,7 @@ def main():
             apollo_net.load("models/%s.base.caffemodel" % corpus_name)
         else:
             apollo_net.load("models/%s.compiled.caffemodel" % corpus_name)
-        print "loaded model"
+        print("loaded model")
         if job == "sample.base":
             models = {
                 "sampling_speaker1": sampling_speaker1_model,
