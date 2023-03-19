@@ -39,14 +39,19 @@ N_TEST = N_TEST_IMAGES * 10
 
 N_EXPERIMENT_PAIRS = 100
 
+# literal listener L0: Takes a description and a set of referents, and chooses the referent (i.e., image) most likely to be described.
 class Listener0Model(object):
     def __init__(self, apollo_net, config):
-        self.scene_encoder = LinearSceneEncoder("Listener0", apollo_net, config)
-        self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config)
-        self.scorer = MlpScorer("Listener0", apollo_net, config)
+        self.scene_encoder = LinearSceneEncoder("Listener0", apollo_net, config)   # Referent encoder.
+        self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder.
+        self.scorer = MlpScorer("Listener0", apollo_net, config)                   # Referent describer: Generates an image description.
         self.apollo_net = apollo_net
 
     def forward(self, data, alt_data, dropout):
+        """
+            data     : Target image (i.e., reference).
+            alt_data : Distractor image (i.e., reference).
+        """
         self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
         ll_alt_scene_enc = \
@@ -58,12 +63,14 @@ class Listener0Model(object):
         labels = np.zeros((len(data),))
         logprobs, accs = self.scorer.forward("", l_string_enc, ll_scenes, labels)
 
-        return logprobs, accs
+        return logprobs, accs # Result: Distribution over referent choices (i.e., over images).
 
+# literal speaker S0: Takes a referent in isolation (i.e., single image) and outputs a description.
+# The literal speaker S0 is used for efficient inference over the space of possible descriptions, i.e., a neural captioning model.
 class Speaker0Model(object):
     def __init__(self, apollo_net, config):
-        self.scene_encoder = LinearSceneEncoder("Speaker0", apollo_net, config)
-        self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)
+        self.scene_encoder = LinearSceneEncoder("Speaker0", apollo_net, config) # Referent encoder (for an image).
+        self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)  # 
 
         self.apollo_net = apollo_net
 
@@ -78,7 +85,7 @@ class Speaker0Model(object):
         self.apollo_net.clear_forward()
         l_scene_enc = self.scene_encoder.forward("", data, dropout)
         probs, sample = self.string_decoder.sample("", l_scene_enc, viterbi)
-        return probs, np.zeros(probs.shape), sample
+        return probs, np.zeros(probs.shape), sample # Result: Distribution over strings.
 
 class CompiledSpeaker1Model(object):
     def __init__(self, apollo_net, config):
@@ -119,6 +126,7 @@ class CompiledSpeaker1Model(object):
         return probs, np.zeros(probs.shape), sample
 
 
+#Reasoning speaker S1 (sampling neural reasoning speaker --> c.f. section 3.4 in the paper)
 class SamplingSpeaker1Model(object):
     def __init__(self, apollo_net, config):
         self.listener0 = Listener0Model(apollo_net, config)
@@ -138,13 +146,15 @@ class SamplingSpeaker1Model(object):
 
         all_fake_scenes = []
         for i_sample in range(n_samples):
-            speaker_logprobs, _, sample = self.speaker0.sample(data, alt_data, dropout, viterbi=False)
+            # Draw a sequence of single-word samples d_k, i.e., sample from the literal speaker given one input image:
+            speaker_logprobs, _, sample = self.speaker0.sample(data, alt_data, dropout, viterbi=False) # "alt_data" not used here.
 
             fake_scenes = []
             for i in range(len(data)):
                 fake_scenes.append(data[i]._replace(description=sample[i]))
             all_fake_scenes.append(fake_scenes)
 
+            # Score samples, i.e., determine which target image (referred to using index i) most likely is best described by the sampled word d_k:
             listener_logprobs, accs = self.listener0.forward(fake_scenes, alt_data, dropout)
             speaker_scores[:,i_sample] = speaker_logprobs
             listener_scores[:,i_sample] = listener_logprobs
@@ -154,6 +164,7 @@ class SamplingSpeaker1Model(object):
         out_sentences = []
         out_speaker_scores = np.zeros(len(data))
         out_listener_scores = np.zeros(len(data))
+        # Always select the "best" sampled word d_k (greedy search):
         for i in range(len(data)):
             if viterbi:
                 q = scores[i,:].argmax()
@@ -172,6 +183,11 @@ class SamplingSpeaker1Model(object):
         return out_speaker_scores, out_listener_scores, out_sentences
 
 def train(train_scenes, test_scenes, model, apollo_net, config):
+"""
+    Trains different types of neuronal network model.
+    
+    model: L0/L1 or S0/S1 model is passed here.
+"""
     n_train = len(train_scenes)
     n_test = len(test_scenes)
 

@@ -61,6 +61,7 @@ class EuclideanScorer(object):
 
         return chosen_logprobs, accs
 
+# The referent describer D takes an image encoding and outputs a description using a (feedforward) conditional neural language model.
 class MlpScorer(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -104,6 +105,7 @@ class MlpScorer(object):
 
         return chosen_logprobs, accs
 
+# Referent encoder.
 class LinearSceneEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -143,6 +145,7 @@ class LinearSceneEncoder(object):
 
         return l_ip1
 
+# Description encoder.
 class LinearStringEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
