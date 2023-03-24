@@ -5,6 +5,7 @@ from indices import WORD_INDEX
 from collections import defaultdict, namedtuple
 import numpy as np
 import re
+import os
 
 Prop = namedtuple("Prop", ["type_index", "object_index", "x", "y", "z", "flip"])
 Scene = namedtuple("Scene", ["image_id", "props", "description", "features"])
@@ -17,9 +18,11 @@ MIN_WORD_COUNT = 5
 DEV_RANGE = range(N_IMAGES - N_TEST_IMAGES - N_DEV_IMAGES, N_IMAGES - N_TEST_IMAGES)
 TEST_RANGE = range(N_IMAGES - N_TEST_IMAGES, N_IMAGES)
 
+BASE_DIR = "E:/AbstractScenes_v1.1/"
+
 def load_props():
     scene_props = []
-    with open("data/abstract/Scenes_10020.txt") as scene_f:
+    with open(BASE_DIR + "Scenes_10020.txt") as scene_f:
         scene_f.readline()
         while True:
             line = scene_f.readline().strip()
@@ -73,9 +76,10 @@ def load_scenes(scene_props):
 
     word_counter = defaultdict(lambda: 0)
     for sent_file_id in range(1, 3):
-        with open("data/abstract/SimpleSentences/SimpleSentences%d_10020.txt" %
-                sent_file_id) as sent_f:
+        with open(BASE_DIR + "SimpleSentences/SimpleSentences%d_10020.txt" % sent_file_id) as sent_f:
             for sent_line in sent_f:
+                if sent_line == "\n":
+                    continue # Skip empty lines!
                 sent_parts = sent_line.strip().split("\t")
                 sent = sent_parts[2]
                 sent = sent.replace('"', ' " ')
@@ -90,9 +94,10 @@ def load_scenes(scene_props):
             WORD_INDEX.index(word)
 
     for sent_file_id in range(1, 3):
-        with open("data/abstract/SimpleSentences/SimpleSentences%d_10020.txt" %
-                sent_file_id) as sent_f:
+        with open(BASE_DIR + "SimpleSentences/SimpleSentences%d_10020.txt" % sent_file_id) as sent_f:
             for sent_line in sent_f:
+                if sent_line == "\n":
+                    continue # Skip empty lines!
                 sent_parts = sent_line.strip().split("\t")
 
                 scene_id = int(sent_parts[0])
@@ -108,11 +113,23 @@ def load_scenes(scene_props):
                 sent = re.sub(r"[.?!']", "", sent)
                 words = sent.lower().split()
                 words = ["<s>"] + words + ["</s>"]
-                word_ids = [WORD_INDEX[w] or 0 for w in words]
+                word_ids = [WORD_INDEX[w] or 0 for w in words] # Create the string feature representation f(d) --> c.f.: section 3.1
+                
+                #print("DEBUG:")
+                #print(words)
+                #print(word_ids)
 
-                with np.load("data/abstract/EmbeddedScenes/Scene%s.png.npz" %
-                        image_strid) as feature_f:
-                    features = feature_f[feature_f.keys()[0]]
+                # Check if the feature representation of referent exists.
+                if os.path.exists(BASE_DIR + "EmbeddedScenes/Scene%s.png.npz" % image_strid):
+                    # This is the corresponding image to the above sentence, i.e., this image was described by the sentence in "sent_line".
+                    with np.load(BASE_DIR + "EmbeddedScenes/Scene%s.png.npz" % image_strid) as feature_f:
+                        # Load feature representation f(r) for referents (secton 3.1 in the paper)
+                        features = feature_f[feature_f.keys()[0]]
+                    #                                       v-- "word_ids" == "description" column defined in line 10.
+                    #                                       v         v-- it seems, this attribute only is used for ``Bird´´ and never for ``Scene´´. Thus, we try to omit it as we lack the png.npz files.
+                else:
+                    features = ""
+                
                 scenes.append(Scene(image_strid, props, word_ids, features))
 
     return scenes

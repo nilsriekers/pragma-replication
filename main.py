@@ -42,25 +42,23 @@ N_EXPERIMENT_PAIRS = 100
 # literal listener L0: Takes a description and a set of referents, and chooses the referent (i.e., image) most likely to be described.
 class Listener0Model(object):
     def __init__(self, apollo_net, config):
-        self.scene_encoder = LinearSceneEncoder("Listener0", apollo_net, config)   # Referent encoder.
-        self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder.
-        self.scorer = MlpScorer("Listener0", apollo_net, config)                   # Referent describer: Generates an image description.
-        self.apollo_net = apollo_net
+        self.scene_encoder  = LinearSceneEncoder("Listener0", apollo_net, config)  # Referent encoder (i.e., image of abstract scene).
+        self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder (i.e., sentence describing the abstract scene image).
+        self.scorer         = MlpScorer("Listener0", apollo_net, config)           # Choice ranker R.
+        self.apollo_net     = apollo_net
 
     def forward(self, data, alt_data, dropout):
         """
-            data     : Target image (i.e., reference).
-            alt_data : Distractor image (i.e., reference).
+            data     : Target images (i.e., referents).
+            alt_data : Distractor images (i.e., referents) ====> Reason: This model is trained CONTRASTIVELY.
         """
         self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
-        ll_alt_scene_enc = \
-                [self.scene_encoder.forward("alt%d" % i, alt, dropout)
-                 for i, alt in enumerate(alt_data)]
-        l_string_enc = self.string_encoder.forward("", data, dropout)
+        ll_alt_scene_enc = [self.scene_encoder.forward("alt%d" % i, alt, dropout) for i, alt in enumerate(alt_data)]
+        l_string_enc     = self.string_encoder.forward("", data, dropout)
 
         ll_scenes = [l_true_scene_enc] + ll_alt_scene_enc
-        labels = np.zeros((len(data),))
+        labels    = np.zeros((len(data),))
         logprobs, accs = self.scorer.forward("", l_string_enc, ll_scenes, labels)
 
         return logprobs, accs # Result: Distribution over referent choices (i.e., over images).
@@ -69,24 +67,27 @@ class Listener0Model(object):
 # The literal speaker S0 is used for efficient inference over the space of possible descriptions, i.e., a neural captioning model.
 class Speaker0Model(object):
     def __init__(self, apollo_net, config):
-        self.scene_encoder = LinearSceneEncoder("Speaker0", apollo_net, config) # Referent encoder (for an image).
-        self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)  # 
+        self.scene_encoder  = LinearSceneEncoder("Speaker0", apollo_net, config) # Referent encoder (creates the embedding for an image).
+        self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)   # Referent describer (outputs a description based on an image embedding).
 
         self.apollo_net = apollo_net
 
+    # Needed for training this base S0 model.
     def forward(self, data, alt_data, dropout):
         self.apollo_net.clear_forward()
         l_scene_enc = self.scene_encoder.forward("", data, dropout)
-        losses = self.string_decoder.forward("", l_scene_enc, data, dropout)
+        losses      = self.string_decoder.forward("", l_scene_enc, data, dropout)
 
         return losses, np.asarray(0)
 
+    # Draw sequence of words (c.f. step 1. of the reasoning model in section 3.4)
     def sample(self, data, alt_data, dropout, viterbi, quantile=None):
         self.apollo_net.clear_forward()
-        l_scene_enc = self.scene_encoder.forward("", data, dropout)
+        l_scene_enc   = self.scene_encoder.forward("", data, dropout)
         probs, sample = self.string_decoder.sample("", l_scene_enc, viterbi)
         return probs, np.zeros(probs.shape), sample # Result: Distribution over strings.
 
+# "Compiled" speaker model S1 was created to answer the question: "Can we bootstrap a more efficient direct speaker?". Section 4.3
 class CompiledSpeaker1Model(object):
     def __init__(self, apollo_net, config):
         self.sampler = SamplingSpeaker1Model(apollo_net, config)
@@ -206,12 +207,9 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
 
         n_train_batches = n_train / config.batch_size
         for i_batch in range(n_train_batches):
-            batch_data = train_scenes[i_batch * config.batch_size : 
-                                      (i_batch + 1) * config.batch_size]
-            alt_indices = \
-                    [np.random.choice(n_train, size=config.batch_size)
-                     for i_alt in range(config.alternatives)]
-            alt_data = [[train_scenes[i] for i in alt] for alt in alt_indices]
+            batch_data  = train_scenes[i_batch * config.batch_size : (i_batch + 1) * config.batch_size]
+            alt_indices = [np.random.choice(n_train, size=config.batch_size) for i_alt in range(config.alternatives)]
+            alt_data    = [[train_scenes[i] for i in alt] for alt in alt_indices]
             
             #apollo_net.clear_forward()
             lls, accs = model.forward(batch_data, alt_data, dropout=True)
@@ -219,21 +217,18 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             adadelta.update(apollo_net, opt_state, config)
 
             e_train_loss -= lls.sum()
-            e_train_acc += accs.sum()
+            e_train_acc  += accs.sum()
 
         n_test_batches = n_test / config.batch_size
         for i_batch in range(n_test_batches):
-            batch_data = test_scenes[i_batch * config.batch_size :
-                                     (i_batch + 1) * config.batch_size]
-            alt_indices = \
-                    [np.random.choice(n_test, size=config.batch_size)
-                     for i_alt in range(config.alternatives)]
-            alt_data = [[test_scenes[i] for i in alt] for alt in alt_indices]
+            batch_data = test_scenes[i_batch * config.batch_size : (i_batch + 1) * config.batch_size]
+            alt_indices = [np.random.choice(n_test, size=config.batch_size) for i_alt in range(config.alternatives)]
+            alt_data    = [[test_scenes[i] for i in alt] for alt in alt_indices]
             
             lls, accs = model.forward(batch_data, alt_data, dropout=False)
 
             e_test_loss -= lls.sum()
-            e_test_acc += accs.sum()
+            e_test_acc  += accs.sum()
 
         with open("vis.html", "a") as vis_f:
             print("</table></body></html>", file=vis_f)

@@ -3,7 +3,8 @@
 from indices import WORD_INDEX
 
 from apollocaffe.layers import *
-from corpus import Scene, Bird
+from corpus import Scene, Bird # "Scene" and "Bird" refer to namedtuple data, e.g., `` Scene = namedtuple("Scene", ["image_id", "props", "description", "features"]) ´´
+                               # Using "Scene" and "Bird" allows to distinguish data without the need for storing it in separate classes.
 import numpy as np
 from scipy.misc import logsumexp
 
@@ -61,7 +62,10 @@ class EuclideanScorer(object):
 
         return chosen_logprobs, accs
 
-# The referent describer D takes an image encoding and outputs a description using a (feedforward) conditional neural language model.
+# Choice ranker R
+#   The choice ranker takes a string encoding and a collection of referent encodings,
+#   assigns a score to each (string, referent) pair, and then transforms these scores
+#   into a distribution over referents.
 class MlpScorer(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -105,7 +109,7 @@ class MlpScorer(object):
 
         return chosen_logprobs, accs
 
-# Referent encoder.
+# Referent encoder (section 3.2)
 class LinearSceneEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -115,6 +119,7 @@ class LinearSceneEncoder(object):
     def forward(self, prefix, scenes, dropout):
         net = self.apollo_net
 
+        # What type of data do we have? Is it abstract scenes...?
         if isinstance(scenes[0], Scene):
             feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS))
             for i_scene, scene in enumerate(scenes):
@@ -122,10 +127,12 @@ class LinearSceneEncoder(object):
                     feature_data[i_scene, prop.type_index * N_PROP_OBJECTS +
                             prop.object_index] = 1
         else:
+            # ...or rather birds?
             assert isinstance(scenes[0], Bird)
             feature_data = np.zeros((len(scenes), len(scenes[0].features)))
             for i_scene, scene in enumerate(scenes):
-                feature_data[i_scene, :] = scenes[i_scene].features
+                feature_data[i_scene, :] = scenes[i_scene].features # "features" == feature representation f(r) of one referent (i.e., of one image).
+                                                                    # --> Set during load_scenes() in corpus.py
 
         l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
         l_drop = "LinearSceneEncoder%s_%s_drop" % (self.name, prefix)
@@ -145,7 +152,7 @@ class LinearSceneEncoder(object):
 
         return l_ip1
 
-# Description encoder.
+# Description encoder (section 3.2)
 class LinearStringEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -153,11 +160,14 @@ class LinearStringEncoder(object):
         self.config = config
 
     def forward(self, prefix, scenes, dropout):
+        """
+            scenes : Description, i.e., sentence, to be encoded.
+        """
         net = self.apollo_net
 
         feature_data = np.zeros((len(scenes), len(WORD_INDEX)))
         for i_scene, scene in enumerate(scenes):
-            for word in scene.description:
+            for word in scene.description:          # "description" attribute comes from the "Scenes" namedtuple from corpus.py
                 feature_data[i_scene, word] += 1
 
         l_data = "LinearStringEncoder_%s_%s_data" % (self.name, prefix)
@@ -311,7 +321,7 @@ class BowStringEncoder(object):
 
         return l_ip2
 
-
+# The referent describer D takes an image encoding and outputs a description using a (feedforward) conditional neural language model.
 class MlpStringDecoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
