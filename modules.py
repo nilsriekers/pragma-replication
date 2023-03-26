@@ -126,6 +126,9 @@ class LinearSceneEncoder(object):
                 for prop in scene.props:
                     #            v--0..99 v-- 0..7 (sky object s ... toy object t) v--35            v--specifies the exact object (=png image) of the given type.
                     feature_data[i_scene, prop.type_index *                        N_PROP_OBJECTS + prop.object_index] = 1
+                    # INTERPRETATION:
+                    #   The number of ones ``1´´ corresponds to the number of features used. The position of the ones ``1´´ corresponds to which exact feature (i.e., png-feature image) was used.
+                    #   Thus, EACH scene or referent is represented as 1x280 row vector.  This IS the feature representation f(r) --> c.f. section 3.1 in the paper.
         else:
             # ...or rather birds?
             assert isinstance(scenes[0], Bird)
@@ -148,7 +151,7 @@ class LinearSceneEncoder(object):
         #               v-- name (passes a string as label)
         #               v       v-- the actual data
         net.f(NumpyData(l_data, feature_data))
-        # ``InnerProduct´´ is a fully connected layer. ``nn.Linear´´ is the PyTorch equivalent.
+        # ``InnerProduct´´ is a fully connected layer. ``nn.Linear´´ is the PyTorch equivalent. The following command creates the referent encoding E_r --> c.f. equation (1) in section 3.2
         net.f(InnerProduct(
                 l_ip1, self.config.hidden_size, bottoms=[l_data], # ``bottoms´´ is the input data to this layer.
                 param_names=p_ip1))

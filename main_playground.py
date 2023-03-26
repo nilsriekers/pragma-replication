@@ -4,6 +4,9 @@ from indices import WORD_INDEX
 from modules_playground import *
 import util
 
+import torch
+from torch import nn
+
 #import apollocaffe
 #from apollocaffe import ApolloNet
 #from apollocaffe.layers import Concat
@@ -15,6 +18,9 @@ import shutil
 import sys
 import yaml
 
+# REMARKS:
+#   ``prop_embedding_size´´ is NOT used in functions relevant for our replication.
+#   ``word_embedding_size´´ is NOT used in functions relevant for our replication.
 CONFIG = """
 opt:
     epochs: 10
@@ -37,8 +43,9 @@ N_TEST             = N_TEST_IMAGES * 10
 N_EXPERIMENT_PAIRS = 100
 
 # literal listener L0: Takes a description and a set of referents, and chooses the referent (i.e., image) most likely to be described.
-class Listener0Model(object):
+class Listener0Model(nn.Module):
     def __init__(self, apollo_net, config):
+        super().__init__() # PYTORCH
         self.scene_encoder  = LinearSceneEncoder("Listener0", apollo_net, config)  # Referent encoder (i.e., image of abstract scene).
         #self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder (i.e., sentence describing the abstract scene image).
         #self.scorer         = MlpScorer("Listener0", apollo_net, config)           # Choice ranker R.
@@ -51,6 +58,7 @@ class Listener0Model(object):
         """
         #self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
+        print("l_true_scene_enc:\n", l_true_scene_enc) # DEBUG: Does the PyTorch-call work?
         ll_alt_scene_enc = [self.scene_encoder.forward("alt%d" % i, alt, dropout) for i, alt in enumerate(alt_data)]
         #l_string_enc     = self.string_encoder.forward("", data, dropout)
 

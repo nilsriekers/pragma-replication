@@ -2,7 +2,6 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from indices import WORD_INDEX
 
@@ -120,12 +119,15 @@ class LinearSceneEncoder(nn.Module):
     def __init__(self, name, apollo_net, config):
         super().__init__() # PYTORCH
         self.name = name
-        #self.apollo_net = apollo_net
         self.config = config
-        #self.layers = nn.Sequential(
-            #         v-- ???? TODO
-        #    nn.Linear(nInput, self.config.hidden_size) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
-        #)
+        # Definition of this NN layer:
+        #                                  v--Input dimension (=rows).    v--Output dimension (=columns).
+        #                                  v   This number (usually 280)  v
+        #                                  v   must match the SECOND      v
+        #                                  v   dimension of the input     v
+        #                                  v   which is ``feature_data´´  v
+        #                                  v   here.                      v
+        self.referent_encoding = nn.Linear(N_PROP_TYPES * N_PROP_OBJECTS, self.config.hidden_size) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
 
     def forward(self, prefix, scenes, dropout):
         #net = self.apollo_net
@@ -152,30 +154,36 @@ class LinearSceneEncoder(nn.Module):
                 feature_data[i_scene, :] = scenes[i_scene].features # "features" == feature representation f(r) of one referent (i.e., of one image).
                                                                     # --> Set during load_scenes() in corpus.py
         
+        # The number of ones ``1´´ corresponds to the number of features used. The position of the ones ``1´´ corresponds to which exact feature (i.e., png-feature image) was used.
+        # Thus, EACH scene or referent is represented as 1x280 row vector. This IS the feature representation f(r) --> c.f. section 3.1 in the paper.
         np.savetxt("feature_data.txt", feature_data, fmt = "%.0f") # Save to file for better inspection.
         print("feature_data :")
-        print(feature_data)
         
-        l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
-        l_drop = "LinearSceneEncoder%s_%s_drop" % (self.name, prefix)
-        l_ip1 = "LinearSceneEncoder%s_%s_ip1" % (self.name, prefix)
-        l_relu1 = "LinearSceneEncoder%s_%s_relu1" % (self.name, prefix)
-        l_ip2 = "LinearSceneEncoder%s_%s_ip2" % (self.name, prefix)
+        # The following is probably not needed and can be deleted later:
+        #l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
+        #l_drop = "LinearSceneEncoder%s_%s_drop" % (self.name, prefix)
+        #l_ip1 = "LinearSceneEncoder%s_%s_ip1" % (self.name, prefix)
+        #l_relu1 = "LinearSceneEncoder%s_%s_relu1" % (self.name, prefix)
+        #l_ip2 = "LinearSceneEncoder%s_%s_ip2" % (self.name, prefix)
 
-        p_ip1 = ["LinearSceneEncoder%s_ip1_weight" % self.name,
-                 "LinearSceneEncoder%s_ip1_bias" % self.name]
-        p_ip2 = ["LinearSceneEncoder%s_ip2_weight" % self.name,
-                 "LinearSceneEncoder%s_ip2_bias" % self.name]
+        #p_ip1 = ["LinearSceneEncoder%s_ip1_weight" % self.name,
+        #         "LinearSceneEncoder%s_ip1_bias" % self.name]
+        #p_ip2 = ["LinearSceneEncoder%s_ip2_weight" % self.name,
+        #         "LinearSceneEncoder%s_ip2_bias" % self.name]
 
-        #               v-- name (passes a string as label)
-        #               v       v-- the actual data
-        net.f(NumpyData(l_data, feature_data))
-        # ``InnerProduct´´ is a fully connected layer. ``nn.Linear´´ is the PyTorch equivalent.
-        net.f(InnerProduct(
-                l_ip1, self.config.hidden_size, bottoms=[l_data], # ``bottoms´´ is the input data to this layer.
-                param_names=p_ip1))
-
-        return l_ip1
+        #                v-- name (passes a string as label)
+        #                v       v-- the actual data
+        #net.f(NumpyData(l_data, feature_data))  # Guess: ``NumpyData´´ specifies the input data to the net/model.
+        
+        # ``InnerProduct´´ is a fully connected layer. ``nn.Linear´´ is the PyTorch equivalent. The following command creates the referent encoding E_r --> c.f. equation (1) in section 3.2
+        #net.f(InnerProduct(
+        #        l_ip1, self.config.hidden_size, bottoms=[l_data], # ``bottoms´´ is the input data to this layer.
+        #        param_names=p_ip1))
+        
+        #return l_ip1
+        print(torch.from_numpy(feature_data).float())
+        print(torch.from_numpy(feature_data).shape)
+        return self.referent_encoding(torch.from_numpy(feature_data).float())
 
 # Description encoder (section 3.2)
 class LinearStringEncoder(object):
