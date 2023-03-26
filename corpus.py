@@ -28,10 +28,10 @@ def load_props():
             line = scene_f.readline().strip()
             if not line:
                 break
-            length = line.split()[1]
-            length = int(length)
+            length = line.split()[1] # Get the second number. Example: If line is "707	7", then we want "7" as it indicates the number of objects in this scene.
+            length = int(length)     # Number of objects in the current scene.
             props = []
-            for i_object in range(length):
+            for i_object in range(length): # Read the next few lines which specify which objects there are in the scene (e.g., read the next 7 lines).
                 line = scene_f.readline().strip()
                 parts = line.split()[1:]
                 parts = [int(p) for p in parts]
@@ -104,8 +104,8 @@ def load_scenes(scene_props):
                 props = scene_props[scene_id]
 
                 sent_id = int(sent_parts[1])
-                image_id = scene_id / 10
-                image_subid = scene_id % 10
+                image_id = scene_id / 10     # "/10" as there are 10 images for every scene, e.g.: Scene707_0, ..., Scene707_9
+                image_subid = scene_id % 10  # "%10" as there are 10 images for every scene, e.g.: Scene707_0, ..., Scene707_9 --> e.g., 707_5 refers to the 5th image of scene 707.
                 image_strid = "%d_%d" % (image_id, image_subid)
 
                 sent = sent_parts[2]
@@ -125,11 +125,10 @@ def load_scenes(scene_props):
                     with np.load(BASE_DIR + "EmbeddedScenes/Scene%s.png.npz" % image_strid) as feature_f:
                         # Load feature representation f(r) for referents (secton 3.1 in the paper)
                         features = feature_f[feature_f.keys()[0]]
-                    #                                       v-- "word_ids" == "description" column defined in line 10.
-                    #                                       v         v-- it seems, this attribute only is used for ``Bird´´ and never for ``Scene´´. Thus, we try to omit it as we lack the png.npz files.
                 else:
                     features = ""
-                
+                #                                       v-- "word_ids" == "description" column defined in line 10.
+                #                                       v         v-- it seems, this attribute only is used for ``Bird´´ and never for ``Scene´´. Thus, we try to omit it as we lack the png.npz files.
                 scenes.append(Scene(image_strid, props, word_ids, features))
 
     return scenes

@@ -184,11 +184,11 @@ class SamplingSpeaker1Model(object):
         return out_speaker_scores, out_listener_scores, out_sentences
 
 def train(train_scenes, test_scenes, model, apollo_net, config):
-"""
-    Trains different types of neuronal network model.
-    
-    model: L0/L1 or S0/S1 model is passed here.
-"""
+    """
+        Trains different types of neuronal network model.
+        
+        model: L0/L1 or S0/S1 model is passed here.
+    """
     n_train = len(train_scenes)
     n_test = len(test_scenes)
 
@@ -205,7 +205,7 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
         e_test_loss = 0
         e_test_acc = 0
 
-        n_train_batches = n_train / config.batch_size
+        n_train_batches = (int)(n_train / config.batch_size)
         for i_batch in range(n_train_batches):
             batch_data  = train_scenes[i_batch * config.batch_size : (i_batch + 1) * config.batch_size]
             alt_indices = [np.random.choice(n_train, size=config.batch_size) for i_alt in range(config.alternatives)]

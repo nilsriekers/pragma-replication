@@ -1,12 +1,18 @@
 #!/usr/bin/env python2
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 from indices import WORD_INDEX
 
-from apollocaffe.layers import *
+#from apollocaffe.layers import *  # Contains all layers: NumpyData, InnerProduct, ...
 from corpus import Scene, Bird # "Scene" and "Bird" refer to namedtuple data, e.g., `` Scene = namedtuple("Scene", ["image_id", "props", "description", "features"]) ´´
                                # Using "Scene" and "Bird" allows to distinguish data without the need for storing it in separate classes.
 import numpy as np
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
+
+#from NumpyData_playground import *
 
 N_PROP_TYPES = 8
 N_PROP_OBJECTS = 35
@@ -110,19 +116,31 @@ class MlpScorer(object):
         return chosen_logprobs, accs
 
 # Referent encoder (section 3.2)
-class LinearSceneEncoder(object):
+class LinearSceneEncoder(nn.Module):
     def __init__(self, name, apollo_net, config):
+        super().__init__() # PYTORCH
         self.name = name
-        self.apollo_net = apollo_net
+        #self.apollo_net = apollo_net
         self.config = config
+        #self.layers = nn.Sequential(
+            #         v-- ???? TODO
+        #    nn.Linear(nInput, self.config.hidden_size) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
+        #)
 
     def forward(self, prefix, scenes, dropout):
-        net = self.apollo_net
-
+        #net = self.apollo_net
+        scenes_debug = "" # DEBUG
+        
         # What type of data do we have? Is it abstract scenes...?
         if isinstance(scenes[0], Scene):
             feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS)) # For the final evaluation, this was an array of size ``100 x 280´´ (c.f.: section 4.4).
             for i_scene, scene in enumerate(scenes):
+                with open("scenes.txt", "a") as f:     # DEBUG
+                    f.write("scene:\n")                # DEBUG
+                    f.write(str(scene))                # DEBUG
+                    f.write("\nscene.props:\n")        # DEBUG
+                    f.write(str(scene.props))          # DEBUG
+                    f.write("\n\n")                    # DEBUG
                 for prop in scene.props:
                     #            v--0..99 v-- 0..7 (sky object s ... toy object t) v--35            v--specifies the exact object (=png image) of the given type.
                     feature_data[i_scene, prop.type_index *                        N_PROP_OBJECTS + prop.object_index] = 1
@@ -133,7 +151,11 @@ class LinearSceneEncoder(object):
             for i_scene, scene in enumerate(scenes):
                 feature_data[i_scene, :] = scenes[i_scene].features # "features" == feature representation f(r) of one referent (i.e., of one image).
                                                                     # --> Set during load_scenes() in corpus.py
-
+        
+        np.savetxt("feature_data.txt", feature_data, fmt = "%.0f") # Save to file for better inspection.
+        print("feature_data :")
+        print(feature_data)
+        
         l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
         l_drop = "LinearSceneEncoder%s_%s_drop" % (self.name, prefix)
         l_ip1 = "LinearSceneEncoder%s_%s_ip1" % (self.name, prefix)
