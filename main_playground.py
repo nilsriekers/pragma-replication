@@ -18,6 +18,8 @@ import shutil
 import sys
 import yaml
 
+from MlpScorer_GGG import *
+
 # REMARKS:
 #   ``prop_embedding_size´´ is NOT used in functions relevant for our replication.
 #   ``word_embedding_size´´ is NOT used in functions relevant for our replication.
@@ -47,9 +49,9 @@ class Listener0Model(nn.Module):
     def __init__(self, apollo_net, config):
         super().__init__() # PYTORCH
         self.scene_encoder  = LinearSceneEncoder("Listener0", apollo_net, config)  # Referent encoder (i.e., image of abstract scene).
-        #self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder (i.e., sentence describing the abstract scene image).
+        self.string_encoder = LinearStringEncoder("Listener0", apollo_net, config) # Description encoder (i.e., sentence describing the abstract scene image).
         #self.scorer         = MlpScorer("Listener0", apollo_net, config)           # Choice ranker R.
-        #self.apollo_net     = apollo_net
+        self.scorer         = MlpScorer_GGG("Listener0", config)                   # Choice ranker R.
 
     def forward(self, data, alt_data, dropout):
         """
@@ -60,10 +62,17 @@ class Listener0Model(nn.Module):
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
         print("l_true_scene_enc:\n", l_true_scene_enc) # DEBUG: Does the PyTorch-call work?
         ll_alt_scene_enc = [self.scene_encoder.forward("alt%d" % i, alt, dropout) for i, alt in enumerate(alt_data)]
-        #l_string_enc     = self.string_encoder.forward("", data, dropout)
-
-        ll_scenes = [l_true_scene_enc] + ll_alt_scene_enc
+        print("ll_alt_scene_enc:\n", ll_alt_scene_enc) # DEBUG: Does the PyTorch-call work?
+        l_string_enc     = self.string_encoder.forward("", data, dropout)
+        print("l_string_enc:\n", l_string_enc)         # DEBUG: Does the PyTorch-call work?
+        
+        ll_scenes = [l_true_scene_enc] + ll_alt_scene_enc # Concatenate.
         labels    = np.zeros((len(data),))
+        
+        print("Shape of l_string_enc:", l_string_enc.shape)         # DEBUG
+        print("ll_scenes:\n", ll_scenes)                            # DEBUG
+        print("Shape of l_true_scene_enc:", l_true_scene_enc.shape) # DEBUG
+        #print("Shape of ll_alt_scene_enc:", ll_alt_scene_enc.shape) # DEBUG
         logprobs, accs = self.scorer.forward("", l_string_enc, ll_scenes, labels)
 
         return logprobs, accs # Result: Distribution over referent choices (i.e., over images).
@@ -98,6 +107,11 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             
             #apollo_net.clear_forward()
             lls, accs = model.forward(batch_data, alt_data, dropout=True)
+            """ COMPUTE THE LOSS HERE!
+                    In the ApolloCaffe version, the loss is computed within model.forward() usually as ``SoftmaxWithLoss()´´.
+                    The PyTorch implementation requires the loss to be computed outside model.forward()
+                    As both, L0 and S0 use SoftMax as last layer, the following loss function is required in the PyTorch implementation: nn.CrossEntropyLoss()
+            """
             apollo_net.backward()
             adadelta.update(apollo_net, opt_state, config)
 
@@ -111,6 +125,11 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             alt_data    = [[test_scenes[i] for i in alt] for alt in alt_indices]
             
             lls, accs = model.forward(batch_data, alt_data, dropout=False)
+            """ COMPUTE THE LOSS HERE!
+                    In the ApolloCaffe version, the loss is computed within model.forward() usually as ``SoftmaxWithLoss()´´.
+                    The PyTorch implementation requires the loss to be computed outside model.forward()
+                    As both, L0 and S0 use SoftMax as last layer, the following loss function is required in the PyTorch implementation: nn.CrossEntropyLoss()
+            """
 
             e_test_loss -= lls.sum()
             e_test_acc  += accs.sum()

@@ -71,18 +71,38 @@ class EuclideanScorer(object):
 #   The choice ranker takes a string encoding and a collection of referent encodings,
 #   assigns a score to each (string, referent) pair, and then transforms these scores
 #   into a distribution over referents.
-class MlpScorer(object):
+class MlpScorer(nn.Module):
     def __init__(self, name, apollo_net, config):
-        self.name = name
-        self.apollo_net = apollo_net
-        self.config = config
+        super().__init__() # PYTORCH
+        self.name          = name
+        self.config        = config
+        """
+        self.choice_ranker = nn.Sequential(
+            ...,
+            nn.ReLU(),
+            nn.Linear(n_INPUT_tbd, n_OUTPUT_tbd),
+            
+        )
+        """
 
+    #                         v--Corresponds to ``l_string_enc´´ in the caller.
+    #                         v        v--Corresponds to ``ll_scenes´´ in the caller.
+    #                         v        v           v--Array of zeros.
     def forward(self, prefix, l_query, ll_targets, labels):
-        net = self.apollo_net
+        """
+            l_query: Embedding of a description (i.e., caption) of shape torch.Size([100, 100])
+            ll_targets: Embedding of Scenes (target and distractor). It is a list of tensors 2 tensors each of shape torch.Size([100, 100])
+            prefix : Not used --> Passed to forward() only with an empty string.
+        """
+        #net = self.apollo_net
 
-        batch_size, n_dims = net.blobs[l_query].shape
+        batch_size, n_dims = l_query.shape #net.blobs[l_query].shape
         n_targets = len(ll_targets)
-
+        
+        print("batch_size = ", batch_size) # 100
+        print("n_dims = "    , n_dims)     # 100
+        print("n_targets = " , n_targets)  # 2
+        
         l_cat = "MlpScorer_%s_%s_cat" % (self.name, prefix)
         l_tile_query = "MlpScorer_%s_%s_tile_query" % (self.name, prefix)
         l_sum = "MlpScorer_%s_%s_sum" % (self.name, prefix)
@@ -96,16 +116,16 @@ class MlpScorer(object):
         for l_target in ll_targets:
             net.blobs[l_target].reshape((batch_size, 1, n_dims))
         net.blobs[l_query].reshape((batch_size, 1, n_dims))
-        net.f(Concat(l_cat, axis=1, bottoms=ll_targets))
-        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query]))
+        net.f(Concat(l_cat, axis=1, bottoms=ll_targets))                              # Put target and distractor scene ("referent") in same blob. Assumption: Horizontal concatenation.
+        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query]))         # Make the shape of the description embedding match the shape of the scenes embedding.
         net.f(Eltwise(l_sum, "SUM", bottoms=[l_tile_query, l_cat]))
         net.f(ReLU(l_relu, bottoms=[l_sum]))
-        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip))
+        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip))      # l_ip -> Inner Product.
         net.blobs[l_ip].reshape((batch_size, n_targets))
-        net.f(NumpyData(l_label, labels))
+        net.f(NumpyData(l_label, labels))    #              v--Row vector with all values 0.
         loss = net.f(SoftmaxWithLoss(l_loss, bottoms=[l_ip, l_label]))
 
-        denominators = logsumexp(net.blobs[l_ip].data, axis=1)
+        denominators = logsumexp(net.blobs[l_ip].data, axis=1)                        # Denominator of equation (3).
         chosen_logprobs = net.blobs[l_ip].data[range(batch_size), labels.astype(int)]
         chosen_logprobs -= denominators
 
@@ -126,8 +146,8 @@ class LinearSceneEncoder(nn.Module):
         #                                  v   must match the SECOND      v
         #                                  v   dimension of the input     v
         #                                  v   which is ``feature_data´´  v
-        #                                  v   here.                      v
-        self.referent_encoding = nn.Linear(N_PROP_TYPES * N_PROP_OBJECTS, self.config.hidden_size) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
+        #                                  v   here.                      v                        v--The paper states the opposite but the Apollocaffe code strongly suggests using the bias term.
+        self.referent_encoding = nn.Linear(N_PROP_TYPES * N_PROP_OBJECTS, self.config.hidden_size, bias=True) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
 
     def forward(self, prefix, scenes, dropout):
         #net = self.apollo_net
@@ -136,6 +156,7 @@ class LinearSceneEncoder(nn.Module):
         # What type of data do we have? Is it abstract scenes...?
         if isinstance(scenes[0], Scene):
             feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS)) # For the final evaluation, this was an array of size ``100 x 280´´ (c.f.: section 4.4).
+            #                                                                       Because 100 samples were used.
             for i_scene, scene in enumerate(scenes):
                 with open("scenes.txt", "a") as f:     # DEBUG
                     f.write("scene:\n")                # DEBUG
@@ -156,8 +177,8 @@ class LinearSceneEncoder(nn.Module):
         
         # The number of ones ``1´´ corresponds to the number of features used. The position of the ones ``1´´ corresponds to which exact feature (i.e., png-feature image) was used.
         # Thus, EACH scene or referent is represented as 1x280 row vector. This IS the feature representation f(r) --> c.f. section 3.1 in the paper.
-        np.savetxt("feature_data.txt", feature_data, fmt = "%.0f") # Save to file for better inspection.
-        print("feature_data :")
+        np.savetxt("feature_data__scene.txt", feature_data, fmt = "%.0f") # Save to file for better inspection.
+        print("feature_data scene :")
         
         # The following is probably not needed and can be deleted later:
         #l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
@@ -166,6 +187,7 @@ class LinearSceneEncoder(nn.Module):
         #l_relu1 = "LinearSceneEncoder%s_%s_relu1" % (self.name, prefix)
         #l_ip2 = "LinearSceneEncoder%s_%s_ip2" % (self.name, prefix)
 
+        """ The following code suggests that the scene encoding DOES have a bias term unlike stated in equation (1) in the paper which then is errorneous! """
         #p_ip1 = ["LinearSceneEncoder%s_ip1_weight" % self.name,
         #         "LinearSceneEncoder%s_ip1_bias" % self.name]
         #p_ip2 = ["LinearSceneEncoder%s_ip2_weight" % self.name,
@@ -186,35 +208,47 @@ class LinearSceneEncoder(nn.Module):
         return self.referent_encoding(torch.from_numpy(feature_data).float())
 
 # Description encoder (section 3.2)
-class LinearStringEncoder(object):
+class LinearStringEncoder(nn.Module):
     def __init__(self, name, apollo_net, config):
+        super().__init__() # PYTORCH
         self.name = name
-        self.apollo_net = apollo_net
         self.config = config
+        #                                     v--1063
+        self.description_encoding = nn.Linear(len(WORD_INDEX), self.config.hidden_size, bias = True)
 
     def forward(self, prefix, scenes, dropout):
         """
             scenes : Description, i.e., sentence, to be encoded.
         """
-        net = self.apollo_net
 
+        #print("WORD_INDEX:\n", WORD_INDEX)          # DEBUG
+        #print("WORD_INDEX size: ", len(WORD_INDEX)) # DEBUG
+        # For the final experiment, ``feature_data´´ takes the following format: 100 x 1063.
+        #                        v--100     , v--1063
         feature_data = np.zeros((len(scenes), len(WORD_INDEX)))
         for i_scene, scene in enumerate(scenes):
-            for word in scene.description:          # "description" attribute comes from the "Scenes" namedtuple from corpus.py
-                feature_data[i_scene, word] += 1
-
+            for word in scene.description:       # "description" attribute comes from the "Scenes" namedtuple from corpus.py
+                #print(word) # DEBUG
+                feature_data[i_scene, word] += 1 # ``feature_data´´ contains integer numbers >= 0 (i.e., 0, 1, 2, ...)
+        
+        print("feature_data description :")
+        print(feature_data)
+        
+        np.savetxt("feature_data__description.txt", feature_data, fmt = "%.0f") # Save to file for better inspection.
+        
         l_data = "LinearStringEncoder_%s_%s_data" % (self.name, prefix)
         l_ip = "LinearStringEncoder_%s_%s_ip" % (self.name, prefix)
 
         p_ip = ["LinearStringEncoder_%s_ip_weight" % self.name,
                 "LinearStringEncoder_%s_ip_bias" % self.name]
 
-        net.f(NumpyData(l_data, feature_data))
-        net.f(InnerProduct(
-                l_ip, self.config.hidden_size, bottoms=[l_data],
-                param_names=p_ip))
+        #net.f(NumpyData(l_data, feature_data))
+        #net.f(InnerProduct(
+        #        l_ip, self.config.hidden_size, bottoms=[l_data],
+        #        param_names=p_ip))
 
-        return l_ip
+        #return l_ip
+        return self.description_encoding(torch.from_numpy(feature_data).float())
 
 class BowSceneEncoder(object):
     def __init__(self, name, apollo_net, config):
@@ -355,8 +389,9 @@ class BowStringEncoder(object):
         return l_ip2
 
 # The referent describer D takes an image encoding and outputs a description using a (feedforward) conditional neural language model.
-class MlpStringDecoder(object):
+class MlpStringDecoder(nn.Module):
     def __init__(self, name, apollo_net, config):
+        super().__init__() # PYTORCH
         self.name = name
         self.apollo_net = apollo_net
         self.config = config
@@ -420,7 +455,7 @@ class MlpStringDecoder(object):
                 l_loss_i, bottoms=[l_ip2_i, l_target_i], 
                 ignore_label=0, normalize=False))
 
-        return -np.asarray(loss)
+        return -np.asarray(loss) #  Maybe use nn.LogSoftmax() as last layer and nn.NLLLoss() as loss function?!
 
     #@profile
     def sample(self, prefix, encoding, viterbi):
