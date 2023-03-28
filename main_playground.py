@@ -60,21 +60,23 @@ class Listener0Model(nn.Module):
         """
         #self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
-        print("l_true_scene_enc:\n", l_true_scene_enc) # DEBUG: Does the PyTorch-call work?
+        #print("l_true_scene_enc:\n", l_true_scene_enc) # DEBUG: Does the PyTorch-call work?
         ll_alt_scene_enc = [self.scene_encoder.forward("alt%d" % i, alt, dropout) for i, alt in enumerate(alt_data)]
-        print("ll_alt_scene_enc:\n", ll_alt_scene_enc) # DEBUG: Does the PyTorch-call work?
+        #print("ll_alt_scene_enc:\n", ll_alt_scene_enc) # DEBUG: Does the PyTorch-call work?
         l_string_enc     = self.string_encoder.forward("", data, dropout)
-        print("l_string_enc:\n", l_string_enc)         # DEBUG: Does the PyTorch-call work?
+        #print("l_string_enc:\n", l_string_enc)         # DEBUG: Does the PyTorch-call work?
         
         ll_scenes = [l_true_scene_enc] + ll_alt_scene_enc # Concatenate.
-        labels    = np.zeros((len(data),))
+        labels    = np.zeros((len(data),), dtype=int)     # MlpScorer needs these as integers.
         
-        print("Shape of l_string_enc:", l_string_enc.shape)         # DEBUG
-        print("ll_scenes:\n", ll_scenes)                            # DEBUG
-        print("Shape of l_true_scene_enc:", l_true_scene_enc.shape) # DEBUG
+        #print("Shape of l_string_enc:", l_string_enc.shape)         # DEBUG
+        #print("ll_scenes:\n", ll_scenes)                            # DEBUG
+        #print("Shape of l_true_scene_enc:", l_true_scene_enc.shape) # DEBUG
         #print("Shape of ll_alt_scene_enc:", ll_alt_scene_enc.shape) # DEBUG
         logprobs, accs = self.scorer.forward("", l_string_enc, ll_scenes, labels)
-
+        
+        print("logprobs:\n", logprobs) # DEBUG
+        print("accs:\n", accs)         # DEBUG
         return logprobs, accs # Result: Distribution over referent choices (i.e., over images).
 
 def train(train_scenes, test_scenes, model, apollo_net, config):
