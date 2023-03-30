@@ -12,6 +12,7 @@ from indices import WORD_INDEX
 N_PROP_TYPES   = 8
 N_PROP_OBJECTS = 35
 N_HIDDEN       = 100
+N_OUT_SCALAR   = 1
 
 n_features_ref_enc  = N_PROP_TYPES * N_PROP_OBJECTS # Number of features a scene encoding has (280).
 n_features_desc_enc = len(WORD_INDEX) # Number of features a description encoding has (1063).
@@ -35,7 +36,7 @@ class LiteralListener_L0(nn.Module):
         self.referent_encoder    = nn.Linear(in_features = n_features_ref_enc, out_features = N_HIDDEN, bias = False)
         self.linear_W4_e         = nn.Linear(in_features = N_HIDDEN, out_features = N_HIDDEN, bias = False)
         self.linear_W5_ed        = nn.Linear(in_features = N_HIDDEN, out_features = N_HIDDEN, bias = False)
-        self.linear_w3           = nn.Linear(in_features = N_HIDDEN, out_features = N_HIDDEN, bias = False)
+        self.linear_w3           = nn.Linear(in_features = N_HIDDEN, out_features = N_OUT_SCALAR, bias = False)
         self.ReLU                = nn.ReLU()
         
     def forward(self, description_rep, referent_rep_1, referent_rep_2):

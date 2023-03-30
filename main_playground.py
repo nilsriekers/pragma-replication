@@ -88,7 +88,8 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
     n_train = len(train_scenes)
     n_test = len(test_scenes)
 
-    opt_state = adadelta.State()
+    #opt_state = adadelta.State()
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     for i_epoch in range(config.epochs):
 
         with open("vis.html", "w") as vis_f:
@@ -96,10 +97,10 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
 
         np.random.shuffle(train_scenes)
 
-        e_train_loss = 0
-        e_train_acc = 0
-        e_test_loss = 0
-        e_test_acc = 0
+        e_train_loss = 0.0
+        e_train_acc = 0.0
+        e_test_loss = 0.0
+        e_test_acc = 0.0
 
         n_train_batches = (int)(n_train / config.batch_size)
         for i_batch in range(n_train_batches):
@@ -107,8 +108,10 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             alt_indices = [np.random.choice(n_train, size=config.batch_size) for i_alt in range(config.alternatives)]
             alt_data    = [[train_scenes[i] for i in alt] for alt in alt_indices]
             
-            #apollo_net.clear_forward()
-            lls, accs = model.forward(batch_data, alt_data, dropout=True)
+            # Zero the gradients
+            optimizer.zero_grad()
+            # Perform forward pass
+            lls, accs = model(batch_data, alt_data, dropout=True)
             """ COMPUTE THE LOSS HERE!
                     In the ApolloCaffe version, the loss is computed within model.forward() usually as ``SoftmaxWithLoss()´´.
                     The PyTorch implementation requires the loss to be computed outside model.forward()
