@@ -79,6 +79,36 @@ class Listener0Model(nn.Module):
         print("accs:\n", accs)         # DEBUG
         return logprobs, accs # Result: Distribution over referent choices (i.e., over images).
 
+
+# literal speaker S0: Takes a referent in isolation (i.e., single image) and outputs a description.
+# The literal speaker S0 is used for efficient inference over the space of possible descriptions, i.e., a neural captioning model.
+class Speaker0Model(object):
+    def __init__(self, apollo_net, config):
+        self.scene_encoder  = LinearSceneEncoder("Speaker0", apollo_net, config) # Referent encoder (creates the embedding for an image).
+        self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)   # Referent describer (outputs a description based on an image embedding).
+
+        #self.apollo_net = apollo_net
+
+    # Needed for training this base S0 model: ``data´´ is the target which was SECRETLY assigned to the speaker.
+    def forward(self, data, alt_data, dropout):
+        """
+        data    : Target scene.
+        alt_data: Distractor scene.
+        """
+        #self.apollo_net.clear_forward()
+        l_scene_enc = self.scene_encoder.forward("", data, dropout)
+        losses      = self.string_decoder.forward("", l_scene_enc, data, dropout)
+
+        return losses, np.asarray(0)
+
+    # Draw sequence of words (c.f. step 1. of the reasoning model in section 3.4)
+    def sample(self, data, alt_data, dropout, viterbi, quantile=None):
+        self.apollo_net.clear_forward()
+        l_scene_enc   = self.scene_encoder.forward("", data, dropout)
+        probs, sample = self.string_decoder.sample("", l_scene_enc, viterbi)
+        return probs, np.zeros(probs.shape), sample # Result: Distribution over strings.
+
+
 def train(train_scenes, test_scenes, model, apollo_net, config):
     """
         Trains different types of neuronal network model.
@@ -89,7 +119,7 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
     n_test = len(test_scenes)
 
     #opt_state = adadelta.State()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     for i_epoch in range(config.epochs):
 
         with open("vis.html", "w") as vis_f:
@@ -109,16 +139,17 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             alt_data    = [[train_scenes[i] for i in alt] for alt in alt_indices]
             
             # Zero the gradients
-            optimizer.zero_grad()
+            #optimizer.zero_grad()
             # Perform forward pass
-            lls, accs = model(batch_data, alt_data, dropout=True)
+            lls, accs = model.forward(batch_data, alt_data, dropout=True) # ApolloCaffe
+            #lls, accs = model.forward(batch_data, alt_data, dropout=True)# PYTORCH
             """ COMPUTE THE LOSS HERE!
                     In the ApolloCaffe version, the loss is computed within model.forward() usually as ``SoftmaxWithLoss()´´.
                     The PyTorch implementation requires the loss to be computed outside model.forward()
                     As both, L0 and S0 use SoftMax as last layer, the following loss function is required in the PyTorch implementation: nn.CrossEntropyLoss()
             """
-            apollo_net.backward()
-            adadelta.update(apollo_net, opt_state, config)
+            #apollo_net.backward()
+            #adadelta.update(apollo_net, opt_state, config)
 
             e_train_loss -= lls.sum()
             e_train_acc  += accs.sum()
@@ -171,11 +202,11 @@ def main():
     print("%d training examples" % len(train_scenes))
     
     listener0_model = Listener0Model(apollo_net, config.model)
-    #speaker0_model = Speaker0Model(apollo_net, config.model)
+    speaker0_model = Speaker0Model(apollo_net, config.model)
     
     if job == "train.base":
-        train(train_scenes, dev_scenes, listener0_model, apollo_net, config.opt)
-        #train(train_scenes, dev_scenes, speaker0_model, apollo_net, config.opt)
+        #train(train_scenes, dev_scenes, listener0_model, apollo_net, config.opt)
+        train(train_scenes, dev_scenes, speaker0_model, apollo_net, config.opt)
         #apollo_net.save("models/%s.base.caffemodel" % corpus_name)
         exit()
 

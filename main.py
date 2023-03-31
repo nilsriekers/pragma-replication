@@ -72,8 +72,12 @@ class Speaker0Model(object):
 
         self.apollo_net = apollo_net
 
-    # Needed for training this base S0 model.
+    # Needed for training this base S0 model: ``data´´ is the target which was SECRETLY assigned to the speaker.
     def forward(self, data, alt_data, dropout):
+        """
+        data    : Target scene.
+        alt_data: Distractor scene.
+        """
         self.apollo_net.clear_forward()
         l_scene_enc = self.scene_encoder.forward("", data, dropout)
         losses      = self.string_decoder.forward("", l_scene_enc, data, dropout)
@@ -88,6 +92,7 @@ class Speaker0Model(object):
         return probs, np.zeros(probs.shape), sample # Result: Distribution over strings.
 
 # "Compiled" speaker model S1 was created to answer the question: "Can we bootstrap a more efficient direct speaker?". Section 4.3
+# 'Direct' models are trained on annotated data which tells the model how pragmatics works. These models have NO listener representation.
 class CompiledSpeaker1Model(object):
     def __init__(self, apollo_net, config):
         self.sampler = SamplingSpeaker1Model(apollo_net, config)
@@ -207,7 +212,9 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
 
         n_train_batches = (int)(n_train / config.batch_size)
         for i_batch in range(n_train_batches):
+            # Target.
             batch_data  = train_scenes[i_batch * config.batch_size : (i_batch + 1) * config.batch_size]
+            # Distractor.
             alt_indices = [np.random.choice(n_train, size=config.batch_size) for i_alt in range(config.alternatives)]
             alt_data    = [[train_scenes[i] for i in alt] for alt in alt_indices]
             

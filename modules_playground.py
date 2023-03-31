@@ -397,6 +397,10 @@ class MlpStringDecoder(nn.Module):
         self.config = config
 
     def forward(self, prefix, encoding, scenes, dropout):
+        """
+        encoding: Is the linear embedding of the targets ``scenes´´ (equation (1)).
+        scenes  : Target scenes.
+        """
         net = self.apollo_net
 
         max_words = max(len(scene.description) for scene in scenes)
@@ -439,19 +443,19 @@ class MlpStringDecoder(nn.Module):
             l_target_i = l_target % (self.name, prefix, i_step)
             l_loss_i = l_loss % (self.name, prefix, i_step)
 
+            print("history_features[:,i_step-1,:]\n", history_features[:,i_step-1,:]) # DEBUG --- What is the format of this?
+            print("Shape:\n", history_features[:,i_step-1,:].shape)
+            print("last_features[:,i_step-1,:]\n", last_features[:,i_step-1,:])
+            print("Shape:\n", last_features[:,i_step-1,:].shape)
             net.f(NumpyData(l_history_data_i, history_features[:,i_step-1,:]))
             net.f(NumpyData(l_last_data_i, last_features[:,i_step-1,:]))
             net.f(Concat(l_cat_features_i, bottoms=[l_history_data_i, l_last_data_i]))
-            net.f(InnerProduct(
-                l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i],
-                param_names=p_ip1))
-            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding]))
+            net.f(InnerProduct(l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i], param_names=p_ip1)) # (W7 @ [dn, d<n, ei])
+            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding]))     # Taking the referent embedding of the target scene into account.
             net.f(ReLU(l_relu1_i, bottoms=[l_cat_i]))
-            net.f(InnerProduct(
-                l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],
-                param_names=p_ip2))
-            net.f(NumpyData(l_target_i, targets[:,i_step]))
-            loss += net.f(SoftmaxWithLoss(
+            net.f(InnerProduct(l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],param_names=p_ip2))                 # W6 @ ReLU(...)
+            net.f(NumpyData(l_target_i, targets[:,i_step])) # This is the target...
+            loss += net.f(SoftmaxWithLoss(                  # ...here, the loss of the prediction vs. target is computed!
                 l_loss_i, bottoms=[l_ip2_i, l_target_i], 
                 ignore_label=0, normalize=False))
 
