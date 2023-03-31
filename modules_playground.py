@@ -16,6 +16,9 @@ from scipy.special import logsumexp
 N_PROP_TYPES = 8
 N_PROP_OBJECTS = 35
 
+n_features_ref_enc  = N_PROP_TYPES * N_PROP_OBJECTS # Number of features a scene encoding has (280).
+n_features_desc_enc = len(WORD_INDEX)               # Number of features a description encoding has (1063).
+
 class EuclideanScorer(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -150,7 +153,6 @@ class LinearSceneEncoder(nn.Module):
         self.referent_encoding = nn.Linear(N_PROP_TYPES * N_PROP_OBJECTS, self.config.hidden_size, bias=True) # Fully connected layer --> Corresponds to ``InnerProduct´´ in Apollocaffe.
 
     def forward(self, prefix, scenes, dropout):
-        #net = self.apollo_net
         scenes_debug = "" # DEBUG
         
         # What type of data do we have? Is it abstract scenes...?
@@ -393,16 +395,21 @@ class MlpStringDecoder(nn.Module):
     def __init__(self, name, apollo_net, config):
         super().__init__() # PYTORCH
         self.name = name
-        self.apollo_net = apollo_net
         self.config = config
+        self.referent_encoder = nn.Linear(in_features = n_features_ref_enc, out_features = self.config.hidden_size, bias = True) # Referent encoder (i.e., image of abstract scene).
+        self.linear_W7        = nn.Linear(in_features = len(WORD_INDEX), out_features = self.config.hidden_size, bias = True)
+        self.ReLU             = nn.ReLU()
+        self.linear_W6        = nn.Linear(in_features = self.config.hidden_size, out_features = len(WORD_INDEX), bias = True)
+        self.SoftMax          = nn.Softmax(dim = 1)
+        self.SoftmaxWithLoss  = nn.CrossEntropyLoss() # It already includes a SoftMax!
 
     def forward(self, prefix, encoding, scenes, dropout):
         """
-        encoding: Is the linear embedding of the targets ``scenes´´ (equation (1)).
+        encoding: Is the linear embedding tensor of the targets ``scenes´´ (equation (1)).
         scenes  : Target scenes.
         """
-        net = self.apollo_net
 
+        """ ##### ORIGINAL CODE: ####
         max_words = max(len(scene.description) for scene in scenes)
         history_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         last_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
@@ -447,6 +454,8 @@ class MlpStringDecoder(nn.Module):
             print("Shape:\n", history_features[:,i_step-1,:].shape)
             print("last_features[:,i_step-1,:]\n", last_features[:,i_step-1,:])
             print("Shape:\n", last_features[:,i_step-1,:].shape)
+            print("targets[:,i_step]\n", targets[:,i_step])
+            print("Shape:\n", targets[:,i_step].shape)
             net.f(NumpyData(l_history_data_i, history_features[:,i_step-1,:]))
             net.f(NumpyData(l_last_data_i, last_features[:,i_step-1,:]))
             net.f(Concat(l_cat_features_i, bottoms=[l_history_data_i, l_last_data_i]))
@@ -458,8 +467,38 @@ class MlpStringDecoder(nn.Module):
             loss += net.f(SoftmaxWithLoss(                  # ...here, the loss of the prediction vs. target is computed!
                 l_loss_i, bottoms=[l_ip2_i, l_target_i], 
                 ignore_label=0, normalize=False))
-
-        return -np.asarray(loss) #  Maybe use nn.LogSoftmax() as last layer and nn.NLLLoss() as loss function?!
+        """
+        
+        loss = 0.0
+        # Extract indicator features on descriptions and single words:
+        max_words        = max(len(scene.description) for scene in scenes)
+        history_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
+        last_features    = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
+        targets          = np.zeros((len(scenes), max_words))
+        for i_scene, scene in enumerate(scenes):
+            for i_word, word in enumerate(scene.description):
+                if word == 0:
+                    continue
+                for ii_word in range(i_word + 1, len(scene.description)):
+                    history_features[i_scene, ii_word, word] += 1
+                last_features[i_scene, i_word, word] += 1
+                targets[i_scene, i_word] = word
+        history_features_tensor = torch.tensor(history_features[:,i_step-1,:])
+        last_features_tensor    = torch.tensor(last_features[:,i_step-1,:])
+        targets_tensor          = torch.tensor(targets[:,i_step])
+        
+        # Compute a vector of scores with one s_i for each vocabulary item:
+        probabilities_p_i = []
+        for i_step in range(1, max_words):
+            input_data                   = torch.cat([history_features_tensor, last_features_tensor], dim = 1) # Horizontal concatenation.
+            indicator_features_embedding = self.linear_W7(input_data)                          # (W7 @ [dn, d<n, ei])
+            all_features_embedding       = torch.cat([indicator_features_embedding, encoding]) # Taking the referent embedding of the target scene (=``encoding´´) into account.
+            scores                       = self.linear_W6( self.ReLU(all_features_embedding) ) # W6 @ ReLU(...)
+            loss                        += self.SoftmaxWithLoss(scores, targets_tensor)        # SoftMax of scores followed by CrossEntropy loss computation.        
+        
+        # In PyTorch, the loss cannot be computed here... or this is no loss in order to incorporate this code.
+        # Maybe use nn.LogSoftmax() as last layer and nn.NLLLoss() as loss function?!
+        return -np.asarray(loss.numpy()) # WARNING: If the tensor is part of a computation graph that requires a gradient (i.e., if x.requires_grad is true), we  need to call x.detach() instead!
 
     #@profile
     def sample(self, prefix, encoding, viterbi):

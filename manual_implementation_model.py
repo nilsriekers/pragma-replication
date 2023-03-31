@@ -16,7 +16,7 @@ N_HIDDEN       = 100
 N_OUT_SCALAR   = 1
 
 n_features_ref_enc  = N_PROP_TYPES * N_PROP_OBJECTS # Number of features a scene encoding has (280).
-n_features_desc_enc = len(WORD_INDEX) # Number of features a description encoding has (1063).
+# len(WORD_INDEX) # Number of features a description encoding has (1063).
 
 def R(X):
     # Computes the choice ranker, i.e., expression (3) in the paper.
@@ -33,7 +33,7 @@ def R(X):
 class LiteralListener_L0(nn.Module):
     def __init__(self):
         super().__init__()
-        self.description_encoder = nn.Linear(in_features = n_features_desc_enc, out_features = N_HIDDEN, bias = False)
+        self.description_encoder = nn.Linear(in_features = len(WORD_INDEX), out_features = N_HIDDEN, bias = False)
         self.referent_encoder    = nn.Linear(in_features = n_features_ref_enc, out_features = N_HIDDEN, bias = False)
         self.linear_W4_e         = nn.Linear(in_features = N_HIDDEN, out_features = N_HIDDEN, bias = False)
         self.linear_W5_ed        = nn.Linear(in_features = N_HIDDEN, out_features = N_HIDDEN, bias = False)
@@ -57,7 +57,7 @@ class LiteralSpeaker_S0(nn.Module):
     def __init__(self):
         super().__init__()
         self.referent_encoder = nn.Linear(in_features = n_features_ref_enc, out_features = N_HIDDEN, bias = False) # Referent encoder (i.e., image of abstract scene).
-        self.linear_W7        = nn.Linear(in_features = n_features_desc_enc, out_features = N_HIDDEN, bias = False)
+        self.linear_W7        = nn.Linear(in_features = len(WORD_INDEX), out_features = N_HIDDEN, bias = False)
         self.ReLU             = nn.ReLU()
         self.linear_W6        = nn.Linear(in_features = N_HIDDEN, out_features = len(WORD_INDEX), bias = False)
         self.SoftMax          = nn.Softmax(dim = 1)
@@ -94,3 +94,7 @@ class LiteralSpeaker_S0(nn.Module):
             probabilities_p_i            = self.SoftMax(scores) # ??? Try it out if this or line 92 above works better!
         
         return probabilities_p_i
+        
+    def sample(self):
+        # ToDo
+        return 0

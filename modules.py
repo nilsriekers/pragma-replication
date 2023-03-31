@@ -72,7 +72,15 @@ class MlpScorer(object):
         self.apollo_net = apollo_net
         self.config = config
 
+    #                         v--Corresponds to ``l_string_enc´´ in the caller.
+    #                         v        v--Corresponds to ``ll_scenes´´ in the caller.
+    #                         v        v           v--Array of zeros.
     def forward(self, prefix, l_query, ll_targets, labels):
+        """
+            l_query: Embedding of a description (i.e., caption) of shape torch.Size([100, 100])
+            ll_targets: Embedding of Scenes (target and distractor). It is a list of tensors 2 tensors each of shape torch.Size([100, 100])
+            prefix : Not used --> Passed to forward() only with an empty string.
+        """
         net = self.apollo_net
 
         batch_size, n_dims = net.blobs[l_query].shape
@@ -91,16 +99,16 @@ class MlpScorer(object):
         for l_target in ll_targets:
             net.blobs[l_target].reshape((batch_size, 1, n_dims))
         net.blobs[l_query].reshape((batch_size, 1, n_dims))
-        net.f(Concat(l_cat, axis=1, bottoms=ll_targets))
-        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query]))
+        net.f(Concat(l_cat, axis=1, bottoms=ll_targets)) # Put target and distractor scene ("referent") in same blob. Assumption: Horizontal concatenation.
+        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query])) # Make the shape of the description embedding match the shape of the scenes embedding.
         net.f(Eltwise(l_sum, "SUM", bottoms=[l_tile_query, l_cat]))
         net.f(ReLU(l_relu, bottoms=[l_sum]))
-        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip))
+        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip)) # l_ip -> Inner Product.
         net.blobs[l_ip].reshape((batch_size, n_targets))
-        net.f(NumpyData(l_label, labels))
+        net.f(NumpyData(l_label, labels))    #              v--Row vector with all values 0.
         loss = net.f(SoftmaxWithLoss(l_loss, bottoms=[l_ip, l_label]))
 
-        denominators = logsumexp(net.blobs[l_ip].data, axis=1)
+        denominators = logsumexp(net.blobs[l_ip].data, axis=1) # Denominator of equation (3).
         chosen_logprobs = net.blobs[l_ip].data[range(batch_size), labels.astype(int)]
         chosen_logprobs -= denominators
 
@@ -122,6 +130,7 @@ class LinearSceneEncoder(object):
         # What type of data do we have? Is it abstract scenes...?
         if isinstance(scenes[0], Scene):
             feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS)) # For the final evaluation, this was an array of size ``100 x 280´´ (c.f.: section 4.4).
+            #                                                                       Because 100 samples were used.
             for i_scene, scene in enumerate(scenes):
                 for prop in scene.props:
                     #            v--0..99 v-- 0..7 (sky object s ... toy object t) v--35            v--specifies the exact object (=png image) of the given type.
@@ -171,10 +180,12 @@ class LinearStringEncoder(object):
         """
         net = self.apollo_net
 
+        # For the final experiment, ``feature_data´´ takes the following format: 100 x 1063.
+        #                        v--100     , v--1063
         feature_data = np.zeros((len(scenes), len(WORD_INDEX)))
         for i_scene, scene in enumerate(scenes):
             for word in scene.description:          # "description" attribute comes from the "Scenes" namedtuple from corpus.py
-                feature_data[i_scene, word] += 1
+                feature_data[i_scene, word] += 1    # ``feature_data´´ contains integer numbers >= 0 (i.e., 0, 1, 2, ...)
 
         l_data = "LinearStringEncoder_%s_%s_data" % (self.name, prefix)
         l_ip = "LinearStringEncoder_%s_%s_ip" % (self.name, prefix)
@@ -380,16 +391,12 @@ class MlpStringDecoder(object):
             net.f(NumpyData(l_history_data_i, history_features[:,i_step-1,:]))
             net.f(NumpyData(l_last_data_i, last_features[:,i_step-1,:]))
             net.f(Concat(l_cat_features_i, bottoms=[l_history_data_i, l_last_data_i]))
-            net.f(InnerProduct(
-                l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i],
-                param_names=p_ip1))
-            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding]))
+            net.f(InnerProduct(l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i], param_names=p_ip1)) # (W7 @ [dn, d<n, ei])
+            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding])) # Taking the referent embedding of the target scene into account.
             net.f(ReLU(l_relu1_i, bottoms=[l_cat_i]))
-            net.f(InnerProduct(
-                l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],
-                param_names=p_ip2))
-            net.f(NumpyData(l_target_i, targets[:,i_step]))
-            loss += net.f(SoftmaxWithLoss(
+            net.f(InnerProduct(l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],param_names=p_ip2))                 # W6 @ ReLU(...)
+            net.f(NumpyData(l_target_i, targets[:,i_step]))     # This is the target...
+            loss += net.f(SoftmaxWithLoss(                      # ...here, the loss of the prediction vs. target is computed!
                 l_loss_i, bottoms=[l_ip2_i, l_target_i], 
                 ignore_label=0, normalize=False))
 

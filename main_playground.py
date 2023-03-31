@@ -82,8 +82,9 @@ class Listener0Model(nn.Module):
 
 # literal speaker S0: Takes a referent in isolation (i.e., single image) and outputs a description.
 # The literal speaker S0 is used for efficient inference over the space of possible descriptions, i.e., a neural captioning model.
-class Speaker0Model(object):
+class Speaker0Model(nn.Module):
     def __init__(self, apollo_net, config):
+        super().__init__() # PYTORCH
         self.scene_encoder  = LinearSceneEncoder("Speaker0", apollo_net, config) # Referent encoder (creates the embedding for an image).
         self.string_decoder = MlpStringDecoder("Speaker0", apollo_net, config)   # Referent describer (outputs a description based on an image embedding).
 
@@ -107,6 +108,64 @@ class Speaker0Model(object):
         l_scene_enc   = self.scene_encoder.forward("", data, dropout)
         probs, sample = self.string_decoder.sample("", l_scene_enc, viterbi)
         return probs, np.zeros(probs.shape), sample # Result: Distribution over strings.
+
+
+#Reasoning speaker S1 (sampling neural reasoning speaker --> c.f. section 3.4 in the paper)
+class SamplingSpeaker1Model(nn.Module):
+    def __init__(self, apollo_net, config):
+        super().__init__() # PYTORCH
+        self.listener0 = Listener0Model(apollo_net, config)
+        self.speaker0 = Speaker0Model(apollo_net, config)
+
+        #self.apollo_net = apollo_net
+
+    def sample(self, data, alt_data, dropout, viterbi, quantile=None):
+        self.apollo_net.clear_forward()
+        if viterbi or quantile is not None:
+            n_samples = 10
+        else:
+            n_samples = 1
+
+        speaker_scores = np.zeros((len(data), n_samples))
+        listener_scores = np.zeros((len(data), n_samples))
+
+        all_fake_scenes = []
+        for i_sample in range(n_samples):
+            # Draw a sequence of single-word samples d_k, i.e., sample from the literal speaker given one input image:
+            speaker_logprobs, _, sample = self.speaker0.sample(data, alt_data, dropout, viterbi=False) # "alt_data" not used here.
+
+            fake_scenes = []
+            for i in range(len(data)):
+                fake_scenes.append(data[i]._replace(description=sample[i]))
+            all_fake_scenes.append(fake_scenes)
+
+            # Score samples, i.e., determine which target image (referred to using index i) most likely is best described by the sampled word d_k:
+            listener_logprobs, accs = self.listener0.forward(fake_scenes, alt_data, dropout)
+            speaker_scores[:,i_sample] = speaker_logprobs
+            listener_scores[:,i_sample] = listener_logprobs
+
+        scores = listener_scores
+
+        out_sentences = []
+        out_speaker_scores = np.zeros(len(data))
+        out_listener_scores = np.zeros(len(data))
+        # Always select the "best" sampled word d_k (greedy search):
+        for i in range(len(data)):
+            if viterbi:
+                q = scores[i,:].argmax()
+            elif quantile is not None:
+                idx = int(n_samples * quantile)
+                if idx == n_samples:
+                    q = scores.argmax()
+                else:
+                    q = scores[i,:].argsort()[idx]
+            else:
+                q = 0
+            out_sentences.append(all_fake_scenes[q][i].description)
+            out_speaker_scores[i] = speaker_scores[i][q]
+            out_listener_scores[i] = listener_scores[i][q]
+
+        return out_speaker_scores, out_listener_scores, out_sentences
 
 
 def train(train_scenes, test_scenes, model, apollo_net, config):
