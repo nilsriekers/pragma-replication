@@ -346,6 +346,10 @@ class MlpStringDecoder(object):
         self.config = config
 
     def forward(self, prefix, encoding, scenes, dropout):
+        """
+        encoding: Is the linear embedding tensor of the targets ``scenes´´ (equation (1)).
+        scenes  : Target scenes.
+        """
         net = self.apollo_net
 
         max_words = max(len(scene.description) for scene in scenes)
@@ -402,8 +406,20 @@ class MlpStringDecoder(object):
 
         return -np.asarray(loss)
 
-    #@profile
+    """
+    Draws a sequence of words, i.e., samples d_1, ..., d_n ~ p_S0(.|r_i)
+    
+    Remark: The paper does not specify, how the sampling actually works.
+            This seems to be an "implementational detail".
+    """
     def sample(self, prefix, encoding, viterbi):
+        """
+        encoding: Encoding of abstract scene image, i.e., referent encoding.
+        viterbi : Decoding scheme:
+                    ``False´´ corresponds to greedy sampling: Randomly sample index of one word from the vocabulary.
+                    ``True´´ corresponds to pure sampling (non-deterministic; truly random).
+                    Note: Set to False in the pragmatic speaker S1 (SamplingSpeaker1).
+        """
         net = self.apollo_net
 
         max_words = 20
@@ -430,6 +446,7 @@ class MlpStringDecoder(object):
         p_ip2 = ["MlpStringDecoder_%s_ip2_weight" % self.name,
                  "MlpStringDecoder_%s_ip2_bias" % self.name] 
 
+        # Compute sampling distribution p_S0:
         for i_step in range(1, max_words):
             l_history_data_i = l_history_data % (self.name, prefix, i_step)
             l_last_data_i = l_last_data % (self.name, prefix, i_step)
@@ -440,9 +457,9 @@ class MlpStringDecoder(object):
             l_ip2_i = l_ip2 % (self.name, prefix, i_step)
             l_softmax_i = l_softmax % (self.name, prefix, i_step)
 
-            net.f(DummyData(l_history_data_i, (1,1,1,1)))
+            net.f(DummyData(l_history_data_i, (1,1,1,1))) # Initialise tensor with random values.
             net.blobs[l_history_data_i].reshape(history_features.shape)
-            net.f(DummyData(l_last_data_i, (1,1,1,1)))
+            net.f(DummyData(l_last_data_i, (1,1,1,1)))    # Initialise tensor with random values.
             net.blobs[l_last_data_i].reshape(last_features.shape)
             net.blobs[l_history_data_i].data[...] = history_features
             net.blobs[l_last_data_i].data[...] = last_features
@@ -457,6 +474,7 @@ class MlpStringDecoder(object):
                 param_names=p_ip2))
             net.f(Softmax(l_softmax_i, bottoms=[l_ip2_i]))
 
+            # Draw samples (i.e., words d_i) from probability distribution p_S0:
             probs = net.blobs[l_softmax_i].data
             history_features += last_features
             last_features[...] = 0
@@ -464,13 +482,14 @@ class MlpStringDecoder(object):
                 d_probs = probs[i_datum,:].astype(float)
                 d_probs /= d_probs.sum()
                 if viterbi:
-                    choice = d_probs.argmax()
+                    choice = d_probs.argmax() # Find index of largest word-probability.
                 else:
-                    choice = np.random.multinomial(1, d_probs).argmax()
+                    choice = np.random.multinomial(1, d_probs).argmax() # Randomly draw one sample, i.e., get the index of one single word from the vocabulary.
                 samples[i_datum, i_step] = choice
                 last_features[i_datum, choice] += 1
                 out_logprobs[i_datum] += np.log(d_probs[choice])
 
+        # This creates a candidate caption / sentence / description of the image e_r.
         out_samples = []
         for i in range(samples.shape[0]):
             this_sample = []
