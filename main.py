@@ -172,7 +172,133 @@ class SamplingSpeaker1Model(object):
 
         return out_speaker_scores, out_listener_scores, out_sentences
 
-def train(train_scenes, test_scenes, model, apollo_net, config, model_name):
+def train(train_scenes, test_scenes, model, apollo_net, config):
+    n_train = len(train_scenes)
+    n_test = len(test_scenes)
+
+    opt_state = adadelta.State()
+    for i_epoch in range(config.epochs):
+
+        with open("vis.html", "w") as vis_f:
+            print >>vis_f, "<html><body><table>"
+
+        np.random.shuffle(train_scenes)
+
+        e_train_loss = 0
+        e_train_acc = 0
+        e_test_loss = 0
+        e_test_acc = 0
+
+        n_train_batches = n_train / config.batch_size
+        for i_batch in range(n_train_batches):
+            batch_data = train_scenes[i_batch * config.batch_size : 
+                                      (i_batch + 1) * config.batch_size]
+            alt_indices = \
+                    [np.random.choice(n_train, size=config.batch_size)
+                     for i_alt in range(config.alternatives)]
+            alt_data = [[train_scenes[i] for i in alt] for alt in alt_indices]
+            
+            #apollo_net.clear_forward()
+            lls, accs = model.forward(batch_data, alt_data, dropout=True)
+            apollo_net.backward()
+            adadelta.update(apollo_net, opt_state, config)
+
+            e_train_loss -= lls.sum()
+            e_train_acc += accs.sum()
+
+        n_test_batches = n_test / config.batch_size
+        for i_batch in range(n_test_batches):
+            batch_data = test_scenes[i_batch * config.batch_size :
+                                     (i_batch + 1) * config.batch_size]
+            alt_indices = \
+                    [np.random.choice(n_test, size=config.batch_size)
+                     for i_alt in range(config.alternatives)]
+            alt_data = [[test_scenes[i] for i in alt] for alt in alt_indices]
+            
+            lls, accs = model.forward(batch_data, alt_data, dropout=False)
+
+            e_test_loss -= lls.sum()
+            e_test_acc += accs.sum()
+
+        with open("vis.html", "a") as vis_f:
+            print >>vis_f, "</table></body></html>"
+
+        shutil.copyfile("vis.html", "vis2.html")
+
+        e_train_loss /= n_train_batches
+        e_train_acc /= n_train_batches
+        e_test_loss /= n_test_batches
+        e_test_acc /= n_test_batches
+
+        print "%5.3f  (%5.3f)  :  %5.3f  (%5.3f)" % (
+                e_train_loss, e_train_acc, e_test_loss, e_test_acc)
+
+def train_seperate(train_scenes, model, apollo_net, config):
+    n_train = len(train_scenes)
+
+    opt_state = adadelta.State()
+    for i_epoch in range(config.epochs):
+        print("here")
+        np.random.shuffle(train_scenes)
+
+        e_train_loss = 0
+        e_train_acc = 0
+
+        n_train_batches = n_train / config.batch_size
+        for i_batch in range(n_train_batches):
+            batch_data = train_scenes[i_batch * config.batch_size : 
+                                      (i_batch + 1) * config.batch_size]
+            alt_indices = \
+                    [np.random.choice(n_train, size=config.batch_size)
+                     for i_alt in range(config.alternatives)]
+            alt_data = [[train_scenes[i] for i in alt] for alt in alt_indices]
+            
+            #apollo_net.clear_forward()
+            lls, accs = model.forward(batch_data, alt_data, dropout=True)
+            apollo_net.backward()
+            adadelta.update(apollo_net, opt_state, config)
+
+            e_train_loss -= lls.sum()
+            e_train_acc += accs.sum()
+
+        print("here2")
+        e_train_loss /= n_train_batches
+        e_train_acc /= n_train_batches
+
+        print ("%5.3f  (%5.3f)" % (e_train_loss, e_train_acc))
+
+
+def test_seperate(test_scenes, model, apollo_net, config):
+    n_test = len(test_scenes)
+
+    opt_state = adadelta.State()
+    for i_epoch in range(config.epochs):
+
+        e_test_loss = 0
+        e_test_acc = 0
+
+        n_test_batches = n_test / config.batch_size
+        print("new test")
+        for i_batch in range(n_test_batches):
+            batch_data = test_scenes[i_batch * config.batch_size :
+                                     (i_batch + 1) * config.batch_size]
+            alt_indices = \
+                    [np.random.choice(n_test, size=config.batch_size)
+                     for i_alt in range(config.alternatives)]
+            alt_data = [[test_scenes[i] for i in alt] for alt in alt_indices]
+
+            lls, accs = model.forward(batch_data, alt_data, dropout=False)
+            print(lls)
+            print(accs)
+            e_test_loss -= lls.sum()
+            e_test_acc += accs.sum()
+
+        e_test_loss /= n_test_batches
+        e_test_acc /= n_test_batches
+
+        print("%5.3f  (%5.3f)" % (e_test_loss, e_test_acc))
+
+def train_wrapper(train_scenes, test_scenes, model, apollo_net, config, model_name):
     n_train = len(train_scenes)
     n_test = len(test_scenes)
 
@@ -239,72 +365,6 @@ def train(train_scenes, test_scenes, model, apollo_net, config, model_name):
 
         print "%5.3f  (%5.3f)  :  %5.3f  (%5.3f)" % (
                 e_train_loss, e_train_acc, e_test_loss, e_test_acc)
-
-
-def train_seperate(train_scenes, model, apollo_net, config):
-    n_train = len(train_scenes)
-
-    opt_state = adadelta.State()
-    for i_epoch in range(config.epochs):
-        print("here")
-        np.random.shuffle(train_scenes)
-
-        e_train_loss = 0
-        e_train_acc = 0
-
-        n_train_batches = n_train / config.batch_size
-        for i_batch in range(n_train_batches):
-            batch_data = train_scenes[i_batch * config.batch_size : 
-                                      (i_batch + 1) * config.batch_size]
-            alt_indices = \
-                    [np.random.choice(n_train, size=config.batch_size)
-                     for i_alt in range(config.alternatives)]
-            alt_data = [[train_scenes[i] for i in alt] for alt in alt_indices]
-            
-            #apollo_net.clear_forward()
-            lls, accs = model.forward(batch_data, alt_data, dropout=True)
-            apollo_net.backward()
-            adadelta.update(apollo_net, opt_state, config)
-
-            e_train_loss -= lls.sum()
-            e_train_acc += accs.sum()
-
-        print("here2")
-        e_train_loss /= n_train_batches
-        e_train_acc /= n_train_batches
-
-        print ("%5.3f  (%5.3f)" % (e_train_loss, e_train_acc))
-
-
-def test_seperate(test_scenes, model, apollo_net, config):
-    n_test = len(test_scenes)
-
-    opt_state = adadelta.State()
-    for i_epoch in range(config.epochs):
-
-        e_test_loss = 0
-        e_test_acc = 0
-
-        n_test_batches = n_test / config.batch_size
-        print("new test")
-        for i_batch in range(n_test_batches):
-            batch_data = test_scenes[i_batch * config.batch_size :
-                                     (i_batch + 1) * config.batch_size]
-            alt_indices = \
-                    [np.random.choice(n_test, size=config.batch_size)
-                     for i_alt in range(config.alternatives)]
-            alt_data = [[test_scenes[i] for i in alt] for alt in alt_indices]
-
-            lls, accs = model.forward(batch_data, alt_data, dropout=False)
-            print(lls)
-            print(accs)
-            e_test_loss -= lls.sum()
-            e_test_acc += accs.sum()
-
-        e_test_loss /= n_test_batches
-        e_test_acc /= n_test_batches
-
-        print("%5.3f  (%5.3f)" % (e_test_loss, e_test_acc))
 
 
 def demo(scenes, model, apollo_net, config):
@@ -382,13 +442,6 @@ def main():
         apollo_net.save("models/%s.base.caffemodel" % corpus_name)
         exit()
 
-    # Added
-    if job == "test_seperate.base":
-        print("dere test")
-        apollo_net.load("models/%s.base.caffemodel" % corpus_name)
-        test_seperate(test_scenes, compiled_speaker1_model, apollo_net, config.opt, model_name)
-        print("done")
-
     if job == "train.compiled":
         apollo_net.load("models/%s.base.caffemodel" % corpus_name)
         print "loaded model"
@@ -444,27 +497,25 @@ def main_wrapper(job, corpus_name, config, model_name):
     compiled_speaker1_model = CompiledSpeaker1Model(apollo_net, config.model)
 
     if job == "train.base":
-        train(train_scenes, dev_scenes, listener0_model, apollo_net, config.opt, model_name)
-        train(train_scenes, dev_scenes, speaker0_model, apollo_net, config.opt, model_name)
+        print "started training base"
+        train_wrapper(train_scenes, dev_scenes, listener0_model, apollo_net, config.opt, model_name)
+        train_wrapper(train_scenes, dev_scenes, speaker0_model, apollo_net, config.opt, model_name)
         apollo_net.save("models/%s_%s.base.caffemodel" % (model_name, corpus_name))
         exit()
 
     # Added
     if job == "train_seperate.base":
-        print("dere train")
+        print "started training base seperate"
         train_seperate(train_scenes, listener0_model, apollo_net, config.opt, model_name)
-        print("2")
         train_seperate(train_scenes, speaker0_model, apollo_net, config.opt, model_name)
-        print("3")
         apollo_net.save("models/%s_%s.base.caffemodel" % (model_name, corpus_name))
         exit()
 
     # Added
     if job == "test_seperate.base":
-        print("dere test")
+        print "started testing sperate"
         apollo_net.load("models/%s_%s.base.caffemodel" % (model_name, corpus_name))
         test_seperate(test_scenes, compiled_speaker1_model, apollo_net, config.opt)
-        print("done")
 
     if job == "train.compiled":
         apollo_net.load("models/%s.base.caffemodel" % corpus_name)

@@ -58,7 +58,7 @@ def run_training(hidden_size_list, batch_size_list, lr_list):
 
 # Call the run_training() function
 if __name__ == "__main__":
-    hidden_size_list = [50, 100, 150]
-    batch_size_list = [50, 100, 150]
-    lr_list = [0.1, 0.5, 1.0]
+    hidden_size_list = [100] #[50, 100, 150]
+    batch_size_list = [100] #[50, 100, 150]
+    lr_list = [1.0] #[0.1, 0.5, 1.0]
     run_training(hidden_size_list, batch_size_list, lr_list)
