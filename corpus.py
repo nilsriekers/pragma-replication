@@ -3,9 +3,9 @@
 from indices import WORD_INDEX
 
 from collections import defaultdict, namedtuple
+import os
 import numpy as np
 import re
-import os
 
 Prop = namedtuple("Prop", ["type_index", "object_index", "x", "y", "z", "flip"])
 Scene = namedtuple("Scene", ["image_id", "props", "description", "features"])
@@ -18,20 +18,20 @@ MIN_WORD_COUNT = 5
 DEV_RANGE = range(N_IMAGES - N_TEST_IMAGES - N_DEV_IMAGES, N_IMAGES - N_TEST_IMAGES)
 TEST_RANGE = range(N_IMAGES - N_TEST_IMAGES, N_IMAGES)
 
-BASE_DIR = "E:/AbstractScenes_v1.1/"
+BASE_DIR = "/home/nils_riekers/git/pragma-replication/data/abstract/"
 
 def load_props():
     scene_props = []
-    with open(BASE_DIR + "Scenes_10020.txt") as scene_f: # Only contains description what props each scene contains. NO descriptions/sentences!
+    with open("data/abstract/Scenes_10020.txt") as scene_f:
         scene_f.readline()
         while True:
             line = scene_f.readline().strip()
             if not line:
                 break
-            length = line.split()[1] # Get the second number. Example: If line is "707	7", then we want "7" as it indicates the number of objects in this scene.
-            length = int(length)     # Number of objects in the current scene.
+            length = line.split()[1]
+            length = int(length)
             props = []
-            for i_object in range(length): # Read the next few lines which specify which objects there are in the scene (e.g., read the next 7 lines).
+            for i_object in range(length):
                 line = scene_f.readline().strip()
                 parts = line.split()[1:]
                 parts = [int(p) for p in parts]
@@ -71,6 +71,7 @@ def normalize_props(scene_props):
 
     return norm_scene_props
 
+
 def load_scenes(scene_props):
     scenes = []
 
@@ -91,7 +92,7 @@ def load_scenes(scene_props):
                     word_counter[word] += 1
     for word, count in word_counter.items():
         if count >= MIN_WORD_COUNT:
-            WORD_INDEX.index(word) # Add a new word to the end of the list if it has not already been added.
+            WORD_INDEX.index(word)
 
     for sent_file_id in range(1, 3):
         with open(BASE_DIR + "SimpleSentences/SimpleSentences%d_10020.txt" % sent_file_id) as sent_f:
@@ -112,8 +113,8 @@ def load_scenes(scene_props):
                 sent = sent.replace('"', "")
                 sent = re.sub(r"[.?!']", "", sent)
                 words = sent.lower().split()
-                words = ["<s>"] + words + ["</s>"]             # This is the actual final description (=sentence) of the corresponding scene (enclosed in start/end makers).
-                word_ids = [WORD_INDEX[w] or 0 for w in words] # Create the string feature representation f(d) for the description --> c.f.: section 3.1
+                words = ["<s>"] + words + ["</s>"]
+                word_ids = [WORD_INDEX[w] or 0 for w in words] # Create the string feature representation f(d) --> c.f.: section 3.1
                 
                 #print("DEBUG:")
                 #print(words)
@@ -127,11 +128,12 @@ def load_scenes(scene_props):
                         features = feature_f[feature_f.keys()[0]]
                 else:
                     features = ""
-                #                                       v-- "word_ids" == "description" column defined in line 10.
-                #                                       v         v-- it seems, this attribute only is used for ``Bird´´ and never for ``Scene´´. Thus, we try to omit it as we lack the png.npz files.
                 scenes.append(Scene(image_strid, props, word_ids, features))
 
     return scenes
+
+
+
 
 def load_abstract():
     props = load_props()

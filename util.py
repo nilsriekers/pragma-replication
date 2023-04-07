@@ -33,7 +33,6 @@ class Struct:
     def __repr__(self):
         return "Struct(%r)" % self.__dict__
 
-# In the model, this class is later instantiated as variable ``WORD_INDEX´´
 class Index:
     def __init__(self):
         self.contents = dict()
@@ -45,7 +44,6 @@ class Index:
             return None
         return self.contents[item]
 
-    # Add a new word ("item") to the end of the list if it has not already been added.
     def index(self, item):
         if item not in self.contents:
             idx = len(self.contents) + 1

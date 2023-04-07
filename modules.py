@@ -3,8 +3,7 @@
 from indices import WORD_INDEX
 
 from apollocaffe.layers import *
-from corpus import Scene, Bird # "Scene" and "Bird" refer to namedtuple data, e.g., `` Scene = namedtuple("Scene", ["image_id", "props", "description", "features"]) ´´
-                               # Using "Scene" and "Bird" allows to distinguish data without the need for storing it in separate classes.
+from corpus import Scene, Bird
 import numpy as np
 from scipy.misc import logsumexp
 
@@ -62,25 +61,13 @@ class EuclideanScorer(object):
 
         return chosen_logprobs, accs
 
-# Choice ranker R
-#   The choice ranker takes a string encoding and a collection of referent encodings,
-#   assigns a score to each (string, referent) pair, and then transforms these scores
-#   into a distribution over referents.
 class MlpScorer(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
         self.apollo_net = apollo_net
         self.config = config
 
-    #                         v--Corresponds to ``l_string_enc´´ in the caller.
-    #                         v        v--Corresponds to ``ll_scenes´´ in the caller.
-    #                         v        v           v--Array of zeros.
     def forward(self, prefix, l_query, ll_targets, labels):
-        """
-            l_query: Embedding of a description (i.e., caption) of shape torch.Size([100, 100])
-            ll_targets: Embedding of Scenes (target and distractor). It is a list of tensors 2 tensors each of shape torch.Size([100, 100])
-            prefix : Not used --> Passed to forward() only with an empty string.
-        """
         net = self.apollo_net
 
         batch_size, n_dims = net.blobs[l_query].shape
@@ -99,16 +86,16 @@ class MlpScorer(object):
         for l_target in ll_targets:
             net.blobs[l_target].reshape((batch_size, 1, n_dims))
         net.blobs[l_query].reshape((batch_size, 1, n_dims))
-        net.f(Concat(l_cat, axis=1, bottoms=ll_targets)) # Put target and distractor scene ("referent") in same blob. Assumption: Horizontal concatenation.
-        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query])) # Make the shape of the description embedding match the shape of the scenes embedding.
+        net.f(Concat(l_cat, axis=1, bottoms=ll_targets))
+        net.f(Tile(l_tile_query, tiles=n_targets, axis=1, bottoms=[l_query]))
         net.f(Eltwise(l_sum, "SUM", bottoms=[l_tile_query, l_cat]))
         net.f(ReLU(l_relu, bottoms=[l_sum]))
-        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip)) # l_ip -> Inner Product.
+        net.f(InnerProduct(l_ip, 1, bottoms=[l_relu], axis=2, param_names=p_ip))
         net.blobs[l_ip].reshape((batch_size, n_targets))
-        net.f(NumpyData(l_label, labels))    #              v--Row vector with all values 0.
+        net.f(NumpyData(l_label, labels))
         loss = net.f(SoftmaxWithLoss(l_loss, bottoms=[l_ip, l_label]))
 
-        denominators = logsumexp(net.blobs[l_ip].data, axis=1) # Denominator of equation (3).
+        denominators = logsumexp(net.blobs[l_ip].data, axis=1)
         chosen_logprobs = net.blobs[l_ip].data[range(batch_size), labels.astype(int)]
         chosen_logprobs -= denominators
 
@@ -117,7 +104,6 @@ class MlpScorer(object):
 
         return chosen_logprobs, accs
 
-# Referent encoder (section 3.2)
 class LinearSceneEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -127,24 +113,17 @@ class LinearSceneEncoder(object):
     def forward(self, prefix, scenes, dropout):
         net = self.apollo_net
 
-        # What type of data do we have? Is it abstract scenes...?
         if isinstance(scenes[0], Scene):
-            feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS)) # For the final evaluation, this was an array of size ``100 x 280´´ (c.f.: section 4.4).
-            #                                                                       Because 100 samples were used.
+            feature_data = np.zeros((len(scenes), N_PROP_TYPES * N_PROP_OBJECTS))
             for i_scene, scene in enumerate(scenes):
                 for prop in scene.props:
-                    #            v--0..99 v-- 0..7 (sky object s ... toy object t) v--35            v--specifies the exact object (=png image) of the given type.
-                    feature_data[i_scene, prop.type_index *                        N_PROP_OBJECTS + prop.object_index] = 1
-                    # INTERPRETATION:
-                    #   The number of ones ``1´´ corresponds to the number of features used. The position of the ones ``1´´ corresponds to which exact feature (i.e., png-feature image) was used.
-                    #   Thus, EACH scene or referent is represented as 1x280 row vector.  This IS the feature representation f(r) --> c.f. section 3.1 in the paper.
+                    feature_data[i_scene, prop.type_index * N_PROP_OBJECTS +
+                            prop.object_index] = 1
         else:
-            # ...or rather birds?
             assert isinstance(scenes[0], Bird)
             feature_data = np.zeros((len(scenes), len(scenes[0].features)))
             for i_scene, scene in enumerate(scenes):
-                feature_data[i_scene, :] = scenes[i_scene].features # "features" == feature representation f(r) of one referent (i.e., of one image).
-                                                                    # --> Set during load_scenes() in corpus.py
+                feature_data[i_scene, :] = scenes[i_scene].features
 
         l_data = "LinearSceneEncoder%s_%s_data" % (self.name, prefix)
         l_drop = "LinearSceneEncoder%s_%s_drop" % (self.name, prefix)
@@ -157,17 +136,13 @@ class LinearSceneEncoder(object):
         p_ip2 = ["LinearSceneEncoder%s_ip2_weight" % self.name,
                  "LinearSceneEncoder%s_ip2_bias" % self.name]
 
-        #               v-- name (passes a string as label)
-        #               v       v-- the actual data
         net.f(NumpyData(l_data, feature_data))
-        # ``InnerProduct´´ is a fully connected layer. ``nn.Linear´´ is the PyTorch equivalent. The following command creates the referent encoding E_r --> c.f. equation (1) in section 3.2
         net.f(InnerProduct(
-                l_ip1, self.config.hidden_size, bottoms=[l_data], # ``bottoms´´ is the input data to this layer.
+                l_ip1, self.config.hidden_size, bottoms=[l_data],
                 param_names=p_ip1))
 
         return l_ip1
 
-# Description encoder (section 3.2)
 class LinearStringEncoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -175,17 +150,12 @@ class LinearStringEncoder(object):
         self.config = config
 
     def forward(self, prefix, scenes, dropout):
-        """
-            scenes : Description, i.e., sentence, to be encoded.
-        """
         net = self.apollo_net
 
-        # For the final experiment, ``feature_data´´ takes the following format: 100 x 1063.
-        #                        v--100     , v--1063
         feature_data = np.zeros((len(scenes), len(WORD_INDEX)))
         for i_scene, scene in enumerate(scenes):
-            for word in scene.description:          # "description" attribute comes from the "Scenes" namedtuple from corpus.py
-                feature_data[i_scene, word] += 1    # ``feature_data´´ contains integer numbers >= 0 (i.e., 0, 1, 2, ...)
+            for word in scene.description:
+                feature_data[i_scene, word] += 1
 
         l_data = "LinearStringEncoder_%s_%s_data" % (self.name, prefix)
         l_ip = "LinearStringEncoder_%s_%s_ip" % (self.name, prefix)
@@ -338,7 +308,7 @@ class BowStringEncoder(object):
 
         return l_ip2
 
-# The referent describer D takes an image encoding and outputs a description using a (feedforward) conditional neural language model.
+
 class MlpStringDecoder(object):
     def __init__(self, name, apollo_net, config):
         self.name = name
@@ -346,24 +316,17 @@ class MlpStringDecoder(object):
         self.config = config
 
     def forward(self, prefix, encoding, scenes, dropout):
-        """
-        encoding: Is the linear embedding tensor of the targets ``scenes´´ (equation (1)).
-        scenes  : Target scenes.
-        """
         net = self.apollo_net
 
         max_words = max(len(scene.description) for scene in scenes)
         history_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         last_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         targets = np.zeros((len(scenes), max_words))
-        for i_scene, scene in enumerate(scenes): # For each scene, parse its description and...
-            #                             v--Example: description=[1, 2, 248, 11, 295, 14]
-            for i_word, word in enumerate(scene.description): # ...for every single word within the description...
+        for i_scene, scene in enumerate(scenes):
+            for i_word, word in enumerate(scene.description):
                 if word == 0:
-                    continue #       v--Starting position always changes (by one index ahead).
-                for ii_word in range(i_word + 1, len(scene.description)): #...look at vocabulary index of the words starting from the second till last position.
-                #                                                          That is, we look at progressively smaller parts of the description as the index ii_word...
-                #                                                          keeps moving further and further towards the right boundary of the description.
+                    continue
+                for ii_word in range(i_word + 1, len(scene.description)):
                     history_features[i_scene, ii_word, word] += 1
                 last_features[i_scene, i_word, word] += 1
                 targets[i_scene, i_word] = word
@@ -398,31 +361,23 @@ class MlpStringDecoder(object):
             net.f(NumpyData(l_history_data_i, history_features[:,i_step-1,:]))
             net.f(NumpyData(l_last_data_i, last_features[:,i_step-1,:]))
             net.f(Concat(l_cat_features_i, bottoms=[l_history_data_i, l_last_data_i]))
-            net.f(InnerProduct(l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i], param_names=p_ip1)) # (W7 @ [dn, d<n, ei])
-            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding])) # Taking the referent embedding of the target scene into account.
+            net.f(InnerProduct(
+                l_ip1_i, self.config.hidden_size, bottoms=[l_cat_features_i],
+                param_names=p_ip1))
+            net.f(Concat(l_cat_i, bottoms=[l_ip1_i, encoding]))
             net.f(ReLU(l_relu1_i, bottoms=[l_cat_i]))
-            net.f(InnerProduct(l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],param_names=p_ip2))                 # W6 @ ReLU(...)
-            net.f(NumpyData(l_target_i, targets[:,i_step]))     # This is the target...
-            loss += net.f(SoftmaxWithLoss(                      # ...here, the loss of the prediction vs. target is computed!
+            net.f(InnerProduct(
+                l_ip2_i, len(WORD_INDEX), bottoms=[l_relu1_i],
+                param_names=p_ip2))
+            net.f(NumpyData(l_target_i, targets[:,i_step]))
+            loss += net.f(SoftmaxWithLoss(
                 l_loss_i, bottoms=[l_ip2_i, l_target_i], 
                 ignore_label=0, normalize=False))
 
         return -np.asarray(loss)
 
-    """
-    Draws a sequence of words, i.e., samples d_1, ..., d_n ~ p_S0(.|r_i)
-    
-    Remark: The paper does not specify, how the sampling actually works.
-            This seems to be an "implementational detail".
-    """
+    #@profile
     def sample(self, prefix, encoding, viterbi):
-        """
-        encoding: Encoding of abstract scene image, i.e., referent encoding.
-        viterbi : Decoding scheme:
-                    ``False´´ corresponds to greedy sampling: Randomly sample index of one word from the vocabulary.
-                    ``True´´ corresponds to pure sampling (non-deterministic; truly random).
-                    Note: Set to False in the pragmatic speaker S1 (SamplingSpeaker1).
-        """
         net = self.apollo_net
 
         max_words = 20
@@ -449,7 +404,6 @@ class MlpStringDecoder(object):
         p_ip2 = ["MlpStringDecoder_%s_ip2_weight" % self.name,
                  "MlpStringDecoder_%s_ip2_bias" % self.name] 
 
-        # Compute sampling distribution p_S0:
         for i_step in range(1, max_words):
             l_history_data_i = l_history_data % (self.name, prefix, i_step)
             l_last_data_i = l_last_data % (self.name, prefix, i_step)
@@ -460,9 +414,9 @@ class MlpStringDecoder(object):
             l_ip2_i = l_ip2 % (self.name, prefix, i_step)
             l_softmax_i = l_softmax % (self.name, prefix, i_step)
 
-            net.f(DummyData(l_history_data_i, (1,1,1,1))) # Initialise tensor with random values.
+            net.f(DummyData(l_history_data_i, (1,1,1,1)))
             net.blobs[l_history_data_i].reshape(history_features.shape)
-            net.f(DummyData(l_last_data_i, (1,1,1,1)))    # Initialise tensor with random values.
+            net.f(DummyData(l_last_data_i, (1,1,1,1)))
             net.blobs[l_last_data_i].reshape(last_features.shape)
             net.blobs[l_history_data_i].data[...] = history_features
             net.blobs[l_last_data_i].data[...] = last_features
@@ -477,7 +431,6 @@ class MlpStringDecoder(object):
                 param_names=p_ip2))
             net.f(Softmax(l_softmax_i, bottoms=[l_ip2_i]))
 
-            # Draw samples (i.e., words d_i) from probability distribution p_S0:
             probs = net.blobs[l_softmax_i].data
             history_features += last_features
             last_features[...] = 0
@@ -485,14 +438,13 @@ class MlpStringDecoder(object):
                 d_probs = probs[i_datum,:].astype(float)
                 d_probs /= d_probs.sum()
                 if viterbi:
-                    choice = d_probs.argmax() # Find index of largest word-probability.
+                    choice = d_probs.argmax()
                 else:
-                    choice = np.random.multinomial(1, d_probs).argmax() # Randomly draw one sample, i.e., get the index of one single word from the vocabulary.
+                    choice = np.random.multinomial(1, d_probs).argmax()
                 samples[i_datum, i_step] = choice
                 last_features[i_datum, choice] += 1
                 out_logprobs[i_datum] += np.log(d_probs[choice])
 
-        # This creates a candidate caption / sentence / description of the image e_r.
         out_samples = []
         for i in range(samples.shape[0]):
             this_sample = []
