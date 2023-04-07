@@ -97,9 +97,8 @@ python main.py train.base abstract
 python main.py sample.base abstract
 ```
 
-## Details of Implementation and Annotated Python3 Code
-TBD.
-
+## Annotated Python3 Code
+The "annotated_python3_code" folder contains the extensively commented source files of Andreas and Klein's implementation. These files differ from the original only in that they are Python 3 code instead of Python 2 code as in the original. The conversion was done automatically using the standard Python tool "2to3" to replace the old ApolloCaffe with PyTorch. At this early stage, we did not know that we would be able to run the original code with ApolloCaffe, despite all the challenges. However, as we had already commented much of the code early on, we decided to leave it in Python 3 and not manually convert it back (which would have been necessary) because of the work invested. In terms of content and concept, the Python version does not affect the functionality.
 
 ## Hyperparameter Optimization
 1. Use this command to perform the hyperparameter optimization:
