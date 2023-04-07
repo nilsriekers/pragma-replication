@@ -475,21 +475,38 @@ class MlpStringDecoder(nn.Module):
         history_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         last_features    = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         targets          = np.zeros((len(scenes), max_words))
-        for i_scene, scene in enumerate(scenes):
-            for i_word, word in enumerate(scene.description):
+        for i_scene, scene in enumerate(scenes): # For each scene, parse its description and...
+            #                             v--Example: description=[1, 2, 248, 11, 295, 14]
+            for i_word, word in enumerate(scene.description): # ...for every single word within the description...
                 if word == 0:
-                    continue
-                for ii_word in range(i_word + 1, len(scene.description)):
+                    continue #       v--Starting position always changes (by one index ahead).
+                for ii_word in range(i_word + 1, len(scene.description)): #...look at vocabulary index of the words starting from the second till last position.
+                #                                                          That is, we look at progressively smaller parts of the description as the index ii_word...
+                #                                                          keeps moving further and further towards the right boundary of the description.
                     history_features[i_scene, ii_word, word] += 1
                 last_features[i_scene, i_word, word] += 1
                 targets[i_scene, i_word] = word
-        history_features_tensor = torch.tensor(history_features[:,i_step-1,:])
-        last_features_tensor    = torch.tensor(last_features[:,i_step-1,:])
-        targets_tensor          = torch.tensor(targets[:,i_step])
+
         
         # Compute a vector of scores with one s_i for each vocabulary item:
         probabilities_p_i = []
         for i_step in range(1, max_words):
+            
+            #with open("referent_describer_features.txt", "a") as f:     # DEBUG
+                #f.write("\nhistory_features:\n")                        # DEBUG
+                #f.write(str(history_features[:,i_step-1,:]), "\n")      # DEBUG
+                #f.write(str(history_features[:,i_step-1,:].shape))      # DEBUG
+                #f.write("\n")                                           # DEBUG
+                #f.write("last_features:\n")                             # DEBUG
+                #f.write(str(last_features[:,i_step-1,:]))               # DEBUG
+                #f.write("\n")                                           # DEBUG
+                #f.write("targets:\n")                                   # DEBUG
+                #f.write(str(targets[:,i_step]))                         # DEBUG
+            
+            history_features_tensor      = torch.tensor(history_features[:,i_step-1,:])
+            last_features_tensor         = torch.tensor(last_features[:,i_step-1,:])
+            targets_tensor               = torch.tensor(targets[:,i_step])
+            
             input_data                   = torch.cat([history_features_tensor, last_features_tensor], dim = 1) # Horizontal concatenation.
             indicator_features_embedding = self.linear_W7(input_data)                          # (W7 @ [dn, d<n, ei])
             all_features_embedding       = torch.cat([indicator_features_embedding, encoding]) # Taking the referent embedding of the target scene (=``encoding´´) into account.

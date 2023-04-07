@@ -83,13 +83,14 @@ class LiteralSpeaker_S0(nn.Module):
                     history_features[i_scene, ii_word, word] += 1
                 last_features[i_scene, i_word, word] += 1
                 targets[i_scene, i_word] = word
-        history_features_tensor = torch.tensor(history_features[:,i_step-1,:])
-        last_features_tensor    = torch.tensor(last_features[:,i_step-1,:])
         # END OF COPIED CODE.
         
         # Compute a vector of scores with one s_i for each vocabulary item:
         probabilities_p_i = []
         for i_step in range(1, max_words):
+            history_features_tensor      = torch.tensor(history_features[:,i_step-1,:])
+            last_features_tensor         = torch.tensor(last_features[:,i_step-1,:])
+        
             input_data                   = torch.cat([history_features_tensor, last_features_tensor], dim = 1) # Horizontal concatenation.
             indicator_features_embedding = self.linear_W7(input_data)
             all_features_embedding       = torch.cat([indicator_features_embedding, e_r]) # Description and target scene embeddings.

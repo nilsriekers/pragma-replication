@@ -22,7 +22,7 @@ BASE_DIR = "E:/AbstractScenes_v1.1/"
 
 def load_props():
     scene_props = []
-    with open(BASE_DIR + "Scenes_10020.txt") as scene_f:
+    with open(BASE_DIR + "Scenes_10020.txt") as scene_f: # Only contains description what props each scene contains. NO descriptions/sentences!
         scene_f.readline()
         while True:
             line = scene_f.readline().strip()
@@ -91,7 +91,7 @@ def load_scenes(scene_props):
                     word_counter[word] += 1
     for word, count in word_counter.items():
         if count >= MIN_WORD_COUNT:
-            WORD_INDEX.index(word)
+            WORD_INDEX.index(word) # Add a new word to the end of the list if it has not already been added.
 
     for sent_file_id in range(1, 3):
         with open(BASE_DIR + "SimpleSentences/SimpleSentences%d_10020.txt" % sent_file_id) as sent_f:
@@ -112,8 +112,8 @@ def load_scenes(scene_props):
                 sent = sent.replace('"', "")
                 sent = re.sub(r"[.?!']", "", sent)
                 words = sent.lower().split()
-                words = ["<s>"] + words + ["</s>"]
-                word_ids = [WORD_INDEX[w] or 0 for w in words] # Create the string feature representation f(d) --> c.f.: section 3.1
+                words = ["<s>"] + words + ["</s>"]             # This is the actual final description (=sentence) of the corresponding scene (enclosed in start/end makers).
+                word_ids = [WORD_INDEX[w] or 0 for w in words] # Create the string feature representation f(d) for the description --> c.f.: section 3.1
                 
                 #print("DEBUG:")
                 #print(words)

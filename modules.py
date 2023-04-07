@@ -356,11 +356,14 @@ class MlpStringDecoder(object):
         history_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         last_features = np.zeros((len(scenes), max_words, len(WORD_INDEX)))
         targets = np.zeros((len(scenes), max_words))
-        for i_scene, scene in enumerate(scenes):
-            for i_word, word in enumerate(scene.description):
+        for i_scene, scene in enumerate(scenes): # For each scene, parse its description and...
+            #                             v--Example: description=[1, 2, 248, 11, 295, 14]
+            for i_word, word in enumerate(scene.description): # ...for every single word within the description...
                 if word == 0:
-                    continue
-                for ii_word in range(i_word + 1, len(scene.description)):
+                    continue #       v--Starting position always changes (by one index ahead).
+                for ii_word in range(i_word + 1, len(scene.description)): #...look at vocabulary index of the words starting from the second till last position.
+                #                                                          That is, we look at progressively smaller parts of the description as the index ii_word...
+                #                                                          keeps moving further and further towards the right boundary of the description.
                     history_features[i_scene, ii_word, word] += 1
                 last_features[i_scene, i_word, word] += 1
                 targets[i_scene, i_word] = word

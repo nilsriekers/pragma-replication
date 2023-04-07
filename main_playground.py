@@ -55,8 +55,8 @@ class Listener0Model(nn.Module):
 
     def forward(self, data, alt_data, dropout):
         """
-            data     : Target images (i.e., referents).
-            alt_data : Distractor images (i.e., referents) ====> Reason: This model is trained CONTRASTIVELY.
+            data     : Target scenes (i.e., referents coming from text-based descriptions which are the basis of the rendered images: Scenes_10020.txt + SeedScenes_1002.txt).
+            alt_data : Distractor scenes (i.e., referents) ====> Reason: This model is trained CONTRASTIVELY.
         """
         #self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
@@ -201,7 +201,7 @@ def train(train_scenes, test_scenes, model, apollo_net, config):
             #optimizer.zero_grad()
             # Perform forward pass
             lls, accs = model.forward(batch_data, alt_data, dropout=True) # ApolloCaffe
-            #lls, accs = model.forward(batch_data, alt_data, dropout=True)# PYTORCH
+            #lls, accs = model(batch_data, alt_data, dropout=True)# PYTORCH
             """ COMPUTE THE LOSS HERE!
                     In the ApolloCaffe version, the loss is computed within model.forward() usually as ``SoftmaxWithLoss()´´.
                     The PyTorch implementation requires the loss to be computed outside model.forward()
@@ -257,13 +257,29 @@ def main():
         assert corpus_name == "birds"
         train_scenes, dev_scenes, test_scenes = corpus.load_birds()
     apollo_net = "" #ApolloNet()
-    print("loaded data")
-    print("%d training examples" % len(train_scenes))
     
+    print("\nData in dictionary WORD_INDEX:") # DEBUG
+    counter = 0
+    for value in WORD_INDEX:                  # DEBUG
+        print(value)                          # DEBUG
+        counter += 1
+    print(counter, "items in WORD_INDEX.")
+    
+    print("\nloaded data")
+    print("%d training examples" % len(train_scenes))
+        
     listener0_model = Listener0Model(apollo_net, config.model)
     speaker0_model = Speaker0Model(apollo_net, config.model)
     
     if job == "train.base":
+        # What data basis for scenes and descriptions?
+        """
+        with open('train_scenes.txt', 'w') as f: # DEBUG
+            for line in train_scenes:
+                f.write(line)
+        """
+        #print(train_scenes)
+        
         #train(train_scenes, dev_scenes, listener0_model, apollo_net, config.opt)
         train(train_scenes, dev_scenes, speaker0_model, apollo_net, config.opt)
         #apollo_net.save("models/%s.base.caffemodel" % corpus_name)

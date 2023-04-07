@@ -49,8 +49,8 @@ class Listener0Model(object):
 
     def forward(self, data, alt_data, dropout):
         """
-            data     : Target images (i.e., referents).
-            alt_data : Distractor images (i.e., referents) ====> Reason: This model is trained CONTRASTIVELY.
+            data     : Target scenes (i.e., referents coming from text-based descriptions which are the basis of the rendered images: Scenes_10020.txt + SeedScenes_1002.txt).
+            alt_data : Distractor scenes (i.e., referents) ====> Reason: This model is trained CONTRASTIVELY.
         """
         self.apollo_net.clear_forward()
         l_true_scene_enc = self.scene_encoder.forward("true", data, dropout)
