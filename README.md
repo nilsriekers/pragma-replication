@@ -1,4 +1,3 @@
-
 # Project Guide
 
 This guide provides instructions for replicating our project with on the basis of the paper "Reasoning about Pragmatics with Neural Listeners and Speakers" by Jacob Andreas and Dan Klein.
@@ -118,3 +117,6 @@ The generated figures will be stored in the "figures" folder.
 The idea was to migrate the existing ApolloCaffe codebase to PyTorch. However, it is not yet executable. 
 
 TBD.
+
+## Written Paper
+A written paper on the project is also available in the repository: [Click here to download the PDF paper](Reasoning_about_Pragmatics_with_Neural_Listeners_and_Speakers.pdf)
